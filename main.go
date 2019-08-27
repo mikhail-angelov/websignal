@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
 	"github.com/mikhail-angelov/websignal/websocket"
 )
 
@@ -19,7 +20,7 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 
-	http.HandleFunc("/ws", socketHandler())
+	http.HandleFunc("/ws", websocket.SocketHandler())
 	http.Handle("/", http.FileServer(http.Dir("./static")))
 
 	ln, err := net.Listen("tcp", *addr)

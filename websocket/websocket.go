@@ -31,7 +31,7 @@ func broadcast(clients map[string]*Client, sender string, bts []byte) {
 	}
 }
 
-func socketHandler() func(w http.ResponseWriter, r *http.Request) {
+func SocketHandler() func(w http.ResponseWriter, r *http.Request) {
 	clients := make(map[string]*Client)
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, _, _, err := ws.UpgradeHTTP(r, w)
