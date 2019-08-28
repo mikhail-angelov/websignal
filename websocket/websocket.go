@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 
+	"encoding/json"
+
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 )
@@ -15,15 +17,23 @@ type Client struct {
 	Id   string
 }
 
-func broadcast(clients map[string]*Client, sender string, bts []byte) {
-	outgoingMessage := fmt.Sprintf("> %s", string(bts))
-	incomingMessage := fmt.Sprintf("< %s", string(bts))
+type Message struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Type string `json:"type"`
+	Data string `json:"data"`
+}
+
+func broadcast(clients map[string]*Client, sender string, data string) {
 	for id, client := range clients {
-		message := []byte(outgoingMessage)
+		text := "> " + data
 		if id == sender {
-			message = []byte(incomingMessage)
+			text = "< " + data
 		}
-		var err = wsutil.WriteServerText(client.Conn, message)
+		message := Message{From: sender, Type: "text", Data: text, To: id}
+		bts, _ := json.Marshal(message)
+		var err = wsutil.WriteServerBinary(client.Conn, bts)
+		log.Printf("write message : %s, %v", message, string(bts))
 		if err != nil {
 			log.Printf("write message error: %s, %v", id, err)
 			return
@@ -48,21 +58,23 @@ func SocketHandler() func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			conn.Close()
 			delete(clients, id)
-			broadcast(clients, id, []byte(fmt.Sprintf("%s is disconnected", id)))
+			broadcast(clients, id, fmt.Sprintf("%s is disconnected", id))
 		}()
 		// todo: check id is used
 		clients[id] = &Client{Conn: conn, Id: id}
 		log.Printf("connected: %s", id)
-		broadcast(clients, id, []byte(fmt.Sprintf("%s is connected", id)))
+		broadcast(clients, id, fmt.Sprintf("%s is connected", id))
 
 		for {
-			bts, op, err := wsutil.ReadClientData(conn)
+			bts, _, err := wsutil.ReadClientData(conn)
 			if err != nil {
 				log.Printf("read message error: %v", err)
 				return
 			}
-			log.Printf("read message %s , %v", bts, op)
-			broadcast(clients, id, bts)
+			message := Message{}
+			json.Unmarshal(bts, &message)
+			log.Printf("Message: %s %s %s", message.Data, message.Type, message.From)
+			broadcast(clients, id, message.Data)
 		}
 	}
 }

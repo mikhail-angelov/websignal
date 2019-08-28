@@ -1,33 +1,45 @@
-const id = Math.random().toString(36).substring(2, 15)
-const socket = new WebSocket(`ws://${location.host}/ws?id=${id}&token=1234`);
+const id = Math.random()
+  .toString(36)
+  .substring(2, 15)
+const socket = new WebSocket(`ws://${location.host}/ws?id=${id}&token=1234`)
+socket.binaryType = 'arraybuffer'
 const messages = document.getElementById('main')
 const textInput = document.getElementById('text')
 const send = document.getElementById('send')
+const encoder = new TextEncoder()
+const decoder = new TextDecoder('utf-8')
 
-send.addEventListener('click', ()=>{
-    const text = textInput.value
-    if(text){
-        socket.send(text) 
-        textInput.value = ''
-    }
+send.addEventListener('click', () => {
+  const data = textInput.value
+  if (data) {
+    const msg = JSON.stringify({ data, from: id, type: 'text' })
+    socket.send(encoder.encode(msg))
+    textInput.value = ''
+  }
 })
-console.log("Attempting Connection...");
+console.log('Attempting Connection...')
 
 socket.onopen = () => {
-    console.log("Successfully Connected");
-};
+  console.log('Successfully Connected')
+}
 
 socket.onclose = event => {
-    console.log("Socket Closed Connection: ", event);
-};
+  console.log('Socket Closed Connection: ', event)
+}
 
 socket.onerror = error => {
-    console.log("Socket Error: ", error);
-};
+  console.log('Socket Error: ', error)
+}
 
-socket.onmessage = event =>{
-    console.log("Socket on message ", event);
+socket.onmessage = event => {
+  try {
+    console.log('Socket on message ', event)
+    const message = JSON.parse(decoder.decode(new Uint8Array(event.data).buffer))
+    console.log('new message', message)
     const newMessage = document.createElement('div')
-    newMessage.textContent = event.data
+    newMessage.textContent = message.data
     messages.appendChild(newMessage)
+  } catch (e) {
+    console.log('onmessage error', e)
+  }
 }
