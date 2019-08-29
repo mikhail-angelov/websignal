@@ -1,8 +1,9 @@
 const id = Math.random()
   .toString(36)
   .substring(2, 15)
-const socket = new WebSocket(`ws://${location.host}/ws?id=${id}&token=1234`)
-socket.binaryType = 'arraybuffer'
+const protocol = location.protocol === 'https:'?"wss:":"ws:"
+const socket = new WebSocket(`${protocol}://${location.host}/ws?id=${id}&token=1234`)
+socket.binaryType = 'arraybuffer' //to support binary messages
 const messages = document.getElementById('main')
 const textInput = document.getElementById('text')
 const send = document.getElementById('send')
