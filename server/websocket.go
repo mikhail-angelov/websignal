@@ -1,4 +1,4 @@
-package websocket
+package server
 
 import (
 	"fmt"
@@ -63,7 +63,7 @@ func SocketHandler() func(w http.ResponseWriter, r *http.Request) {
 		// todo: check id is used
 		clients[id] = &Client{Conn: conn, Id: id}
 		log.Printf("connected: %s", id)
-		broadcast(clients, id, fmt.Sprintf("%s is connected", id))
+		// broadcast(clients, id, fmt.Sprintf("%s is connected", id))
 
 		for {
 			bts, _, err := wsutil.ReadClientData(conn)
@@ -72,6 +72,7 @@ func SocketHandler() func(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			message := Message{}
+			log.Printf("Message: %s", string(bts))
 			json.Unmarshal(bts, &message)
 			log.Printf("Message: %s %s %s", message.Data, message.Type, message.From)
 			broadcast(clients, id, message.Data)

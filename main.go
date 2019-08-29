@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mikhail-angelov/websignal/websocket"
+	"github.com/mikhail-angelov/websignal/server"
 )
 
 var addr = flag.String("port", ":9001", "addr to listen")
@@ -20,7 +20,7 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 
-	http.HandleFunc("/ws", websocket.SocketHandler())
+	http.HandleFunc("/ws", server.SocketHandler())
 	http.Handle("/", http.FileServer(http.Dir("./static")))
 
 	ln, err := net.Listen("tcp", *addr)
