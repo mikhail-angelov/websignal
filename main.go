@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"net"
 	"net/http"
@@ -14,20 +13,20 @@ import (
 	"github.com/mikhail-angelov/websignal/server"
 )
 
-var addr = flag.String("port", ":9001", "addr to listen")
-
 func main() {
-	log.SetFlags(0)
-	flag.Parse()
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9001"
+	}
 
 	http.HandleFunc("/ws", server.SocketHandler())
 	http.Handle("/", http.FileServer(http.Dir("./static")))
 
-	ln, err := net.Listen("tcp", *addr)
+	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Fatalf("listen %q error: %v", *addr, err)
+		log.Fatalf("listen %s error: %v", port, err)
 	}
-	log.Printf("listening %s (%q)", ln.Addr(), *addr)
+	log.Printf("listening %s (%s)", ln.Addr(), port)
 
 	var (
 		s     = new(http.Server)
