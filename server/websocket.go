@@ -1,12 +1,9 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
-
-	"encoding/json"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -15,30 +12,6 @@ import (
 type Client struct {
 	Conn net.Conn
 	Id   string
-}
-
-type Message struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Type string `json:"type"`
-	Data string `json:"data"`
-}
-
-func broadcast(clients map[string]*Client, sender string, data string) {
-	for id, client := range clients {
-		text := "> " + data
-		if id == sender {
-			text = "< " + data
-		}
-		message := Message{From: sender, Type: "text", Data: text, To: id}
-		bts, _ := json.Marshal(message)
-		var err = wsutil.WriteServerBinary(client.Conn, bts)
-		log.Printf("write message : %s, %v", message, string(bts))
-		if err != nil {
-			log.Printf("write message error: %s, %v", id, err)
-			return
-		}
-	}
 }
 
 func SocketHandler() func(w http.ResponseWriter, r *http.Request) {
@@ -58,12 +31,11 @@ func SocketHandler() func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			conn.Close()
 			delete(clients, id)
-			broadcast(clients, id, fmt.Sprintf("%s is disconnected", id))
 		}()
 		// todo: check id is used
-		clients[id] = &Client{Conn: conn, Id: id}
+		client := &Client{Conn: conn, Id: id}
+		clients[id] = client
 		log.Printf("connected: %s", id)
-		// broadcast(clients, id, fmt.Sprintf("%s is connected", id))
 
 		for {
 			bts, _, err := wsutil.ReadClientData(conn)
@@ -71,11 +43,7 @@ func SocketHandler() func(w http.ResponseWriter, r *http.Request) {
 				log.Printf("read message error: %v", err)
 				return
 			}
-			message := Message{}
-			log.Printf("Message: %s", string(bts))
-			json.Unmarshal(bts, &message)
-			log.Printf("Message: %s %s %s", message.Data, message.Type, message.From)
-			broadcast(clients, id, message.Data)
+			ProcessMessage(clients, client, bts)
 		}
 	}
 }

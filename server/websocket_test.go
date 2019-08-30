@@ -23,7 +23,7 @@ func TestSocketHandler(t *testing.T) {
 	}
 	defer ws.Close()
 
-	message := Message{From: "sender", Type: "text", Data: "test", To: "id"}
+	message := Message{From: "sender", Type: TEXT, Data: "test", To: "id"}
 	bts, _ := json.Marshal(message)
 	if err := ws.WriteMessage(websocket.TextMessage, bts); err != nil {
 		t.Fatalf("%v", err)
