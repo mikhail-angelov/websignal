@@ -8,13 +8,14 @@ import (
 )
 
 const (
-	CREATE_ROOM int = iota
-	JOIN_ROOM
-	SDP
-	CANDIDATE
-	TEXT
+	createRoomMessage int = iota
+	joinRoomMessage
+	sdpMessage
+	candidateMessage
+	textMessage
 )
 
+// Message (ws) fields
 type Message struct {
 	From string `json:"from"`
 	To   string `json:"to"`
@@ -22,26 +23,27 @@ type Message struct {
 	Data string `json:"data"`
 }
 
-func ProcessMessage(clients map[string]*Client, from *Client, bts []byte) {
+// ProcessMessage ws messages processor
+func ProcessMessage(connections map[string]*WS, from *WS, bts []byte) {
 	message := Message{}
 	log.Printf("Message: %s", string(bts))
 	json.Unmarshal(bts, &message)
 	log.Printf("Message: %s %d %s", message.Data, message.Type, message.From)
 	switch message.Type {
-	case TEXT:
-		broadcast(clients, from.Id, message.Data)
+	case textMessage:
+		broadcast(connections, from.ID, message.Data)
 	}
 }
 
-func broadcast(clients map[string]*Client, sender string, data string) {
-	for id, client := range clients {
+func broadcast(connections map[string]*WS, sender string, data string) {
+	for id, ws := range connections {
 		text := "> " + data
 		if id == sender {
 			text = "< " + data
 		}
-		message := Message{From: sender, Type: TEXT, Data: text, To: id}
+		message := Message{From: sender, Type: textMessage, Data: text, To: id}
 		bts, _ := json.Marshal(message)
-		var err = wsutil.WriteServerBinary(client.Conn, bts)
+		var err = wsutil.WriteServerBinary(ws.Conn, bts)
 		log.Printf("write message : %v, %v", message, string(bts))
 		if err != nil {
 			log.Printf("write message error: %s, %v", id, err)

@@ -11,7 +11,8 @@ import (
 )
 
 func TestSocketHandler(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(SocketHandler()))
+	wsServer := NewWsServer()
+	s := httptest.NewServer(http.HandlerFunc(wsServer.SocketHandler))
 	defer s.Close()
 
 	url := "ws" + strings.TrimPrefix(s.URL, "http") + "/?id=test"
@@ -23,7 +24,7 @@ func TestSocketHandler(t *testing.T) {
 	}
 	defer ws.Close()
 
-	message := Message{From: "sender", Type: TEXT, Data: "test", To: "id"}
+	message := Message{From: "sender", Type: textMessage, Data: "test", To: "id"}
 	bts, _ := json.Marshal(message)
 	if err := ws.WriteMessage(websocket.TextMessage, bts); err != nil {
 		t.Fatalf("%v", err)
