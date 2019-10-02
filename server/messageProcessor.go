@@ -10,6 +10,7 @@ import (
 const (
 	createRoomMessage int = iota
 	joinRoomMessage
+	leaveRoomMessage
 	sdpMessage
 	candidateMessage
 	textMessage
@@ -31,11 +32,11 @@ func ProcessMessage(connections map[string]*WS, from *WS, bts []byte) {
 	log.Printf("Message: %s %d %s", message.Data, message.Type, message.From)
 	switch message.Type {
 	case textMessage:
-		broadcast(connections, from.ID, message.Data)
+		_broadcast(connections, from.ID, message.Data)
 	}
 }
 
-func broadcast(connections map[string]*WS, sender string, data string) {
+func _broadcast(connections map[string]*WS, sender string, data string) {
 	for id, ws := range connections {
 		text := "> " + data
 		if id == sender {

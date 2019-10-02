@@ -1,12 +1,14 @@
 package server
 
 import (
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"github.com/pkg/errors"
 )
 
 // WS is websocket connection
@@ -18,12 +20,14 @@ type WS struct {
 // WsServer is websocket server
 type WsServer struct {
 	clients map[string]*WS
+	rooms   *RoomService
 }
 
 //NewWsServer create new service
-func NewWsServer() *WsServer {
+func NewWsServer(rooms *RoomService) *WsServer {
 	res := WsServer{
-		clients: map[string]*WS{},
+		clients: make(map[string]*WS),
+		rooms:   rooms,
 	}
 	return &res
 }
@@ -56,6 +60,59 @@ func (s *WsServer) SocketHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("read message error: %v", err)
 			return
 		}
-		ProcessMessage(s.clients, client, bts)
+		s.processMessage(client, bts)
 	}
+}
+
+func (s *WsServer) processMessage(from *WS, bts []byte) error {
+	var err error
+	message := Message{}
+	log.Printf("Message: %s", string(bts))
+	json.Unmarshal(bts, &message)
+	log.Printf("Message: %s %d %s", message.Data, message.Type, message.From)
+	switch message.Type {
+	case textMessage:
+		broadcast(s.clients, from.ID, message.Data)
+	case joinRoomMessage:
+		err = s.rooms.JoinToRoom(message.Data, from.ID)
+	case leaveRoomMessage:
+		err = s.rooms.LeaveRoom(message.Data, from.ID)
+	case sdpMessage:
+		to := s.clients[message.To]
+		if to == nil {
+			return errors.Errorf("invalid destination")
+		}
+		err = send(to.Conn, &Message{From: from.ID, Type: sdpMessage, Data: message.Data, To: message.To})
+	case candidateMessage:
+		to := s.clients[message.To]
+		if to == nil {
+			return errors.Errorf("invalid destination")
+		}
+		err = send(to.Conn, &Message{From: from.ID, Type: candidateMessage, Data: message.Data, To: message.To})
+	}
+	return err
+}
+
+func broadcast(connections map[string]*WS, sender string, data string) {
+	for id, ws := range connections {
+		text := "> " + data
+		if id == sender {
+			text = "< " + data
+		}
+		message := Message{From: sender, Type: textMessage, Data: text, To: id}
+		var err = send(ws.Conn, &message)
+		log.Printf("write message : %v", message)
+		if err != nil {
+			log.Printf("write message error: %s, %v", id, err)
+			return
+		}
+	}
+}
+
+func send(conn net.Conn, message *Message) error {
+	bts, err := json.Marshal(&message)
+	if err != nil {
+		return err
+	}
+	return wsutil.WriteServerBinary(conn, bts)
 }

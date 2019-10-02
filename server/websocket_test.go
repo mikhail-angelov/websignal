@@ -11,7 +11,8 @@ import (
 )
 
 func TestSocketHandler(t *testing.T) {
-	wsServer := NewWsServer()
+	rooms := NewRoomService()
+	wsServer := NewWsServer(rooms)
 	s := httptest.NewServer(http.HandlerFunc(wsServer.SocketHandler))
 	defer s.Close()
 

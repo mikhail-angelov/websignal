@@ -2,11 +2,14 @@ package server
 
 import (
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+
+	"github.com/go-chi/chi"
+	"github.com/rakyll/statik/fs"
 )
 
 // Server is http server
@@ -29,24 +32,24 @@ func (s *Server) Execute() error {
 
 func (s *Server) run() error {
 	var (
-		server = new(http.Server)
-		serve  = make(chan error, 1)
-		sig    = make(chan os.Signal, 1)
-		ws     = NewWsServer()
+		serve           = make(chan error, 1)
+		sig             = make(chan os.Signal, 1)
+		rooms           = &RoomService{}
+		ws              = NewWsServer(rooms)
+		roomsController = NewRoomsController(rooms)
+		r               = chi.NewRouter()
 	)
-	http.Handle("/", http.FileServer(http.Dir("./static")))
-	http.HandleFunc("/ws", ws.SocketHandler)
+	addFileServer(r, "/", http.Dir("./static"))
+	r.Get("/ws", ws.SocketHandler)
+	r.Get("/room", roomsController.HTTPHandler)
 
 	port := s.Port
-	ln, err := net.Listen("tcp", ":"+port)
+	err := http.ListenAndServe(":"+port, r)
 	if err != nil {
 		log.Fatalf("listen %s error: %v", port, err)
 		return err
 	}
-	log.Printf("listening %s (%s)", ln.Addr(), port)
-
 	signal.Notify(sig, syscall.SIGTERM)
-	go func() { serve <- server.Serve(ln) }()
 
 	select {
 	case err := <-serve:
@@ -55,4 +58,37 @@ func (s *Server) run() error {
 		log.Printf("signal %q received", sig)
 	}
 	return nil
+}
+
+// serves static files from /web or embedded by statik
+func addFileServer(r chi.Router, path string, root http.FileSystem) {
+
+	var webFS http.Handler
+
+	statikFS, err := fs.New()
+	if err != nil {
+		log.Printf("[DEBUG] no embedded assets loaded, %s", err)
+		log.Printf("[INFO] run file server for %s, path %s", root, path)
+		webFS = http.FileServer(root)
+	} else {
+		log.Printf("[INFO] run file server for %s, embedded", root)
+		webFS = http.FileServer(statikFS)
+	}
+
+	origPath := path
+	webFS = http.StripPrefix(path, webFS)
+	if path != "/" && path[len(path)-1] != '/' {
+		r.Get(path, http.RedirectHandler(path+"/", 301).ServeHTTP)
+		path += "/"
+	}
+	path += "*"
+
+	r.Get(path, func(w http.ResponseWriter, r *http.Request) {
+		// don't show dirs, just serve files
+		if strings.HasSuffix(r.URL.Path, "/") && len(r.URL.Path) > 1 && r.URL.Path != (origPath+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		webFS.ServeHTTP(w, r)
+	})
 }
