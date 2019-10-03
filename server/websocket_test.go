@@ -2,21 +2,23 @@ package server
 
 import (
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
 )
 
 func TestSocketHandler(t *testing.T) {
 	rooms := NewRoomService()
 	wsServer := NewWsServer(rooms)
-	s := httptest.NewServer(http.HandlerFunc(wsServer.SocketHandler))
+	router := chi.NewRouter()
+	router.HandleFunc("/ws", wsServer.SocketHandler)
+	s := httptest.NewServer(router)
 	defer s.Close()
 
-	url := "ws" + strings.TrimPrefix(s.URL, "http") + "/?id=test"
+	url := "ws" + strings.TrimPrefix(s.URL, "http") + "/ws?id=test"
 	t.Log("ws connect: " + url)
 
 	ws, _, err := websocket.DefaultDialer.Dial(url, nil)

@@ -40,7 +40,7 @@ func (s *Server) run() error {
 		r               = chi.NewRouter()
 	)
 	addFileServer(r, "/", http.Dir("./static"))
-	r.Get("/ws", ws.SocketHandler)
+	r.HandleFunc("/ws", ws.SocketHandler)
 	r.Get("/room", roomsController.HTTPHandler)
 
 	port := s.Port

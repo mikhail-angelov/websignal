@@ -94,23 +94,23 @@ func (s *WsServer) processMessage(from *WS, bts []byte) error {
 }
 
 func broadcast(connections map[string]*WS, sender string, data string) {
+	log.Printf("broadcast : %d %v", len(connections), data)
 	for id, ws := range connections {
 		text := "> " + data
 		if id == sender {
 			text = "< " + data
 		}
 		message := Message{From: sender, Type: textMessage, Data: text, To: id}
-		var err = send(ws.Conn, &message)
-		log.Printf("write message : %v", message)
+		err := send(ws.Conn, &message)
 		if err != nil {
-			log.Printf("write message error: %s, %v", id, err)
-			return
+			log.Printf("send message error: %s, %v", id, err)
 		}
 	}
 }
 
 func send(conn net.Conn, message *Message) error {
-	bts, err := json.Marshal(&message)
+	log.Printf("send : %v", message)
+	bts, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}

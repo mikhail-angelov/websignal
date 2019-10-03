@@ -9,11 +9,12 @@ const textInput = document.getElementById('text')
 const send = document.getElementById('send')
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8')
+const TEXT_TYPE = 0
 
 send.addEventListener('click', () => {
   const data = textInput.value
   if (data) {
-    const msg = JSON.stringify({ data, from: id, type: 'text' })
+    const msg = JSON.stringify({ data, from: id, type: TEXT_TYPE })
     socket.send(encoder.encode(msg))
     textInput.value = ''
   }
