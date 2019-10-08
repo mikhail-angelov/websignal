@@ -14,5 +14,5 @@ func main() {
 	s := &server.Server{
 		Port: port,
 	}
-	s.Execute()
+	s.Run()
 }

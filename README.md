@@ -1,3 +1,3 @@
-# Elementary web rtc signalling server
+# Elementary webrtc signalling server
 
 TBD
