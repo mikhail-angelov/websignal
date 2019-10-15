@@ -14,5 +14,6 @@ func main() {
 	s := &server.Server{
 		Port: port,
 	}
-	s.Run()
+	jwtSectret := "tsjwt"
+	s.Run(jwtSectret)
 }

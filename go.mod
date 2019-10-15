@@ -3,7 +3,9 @@ module github.com/mikhail-angelov/websignal
 go 1.12
 
 require (
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/go-chi/chi v4.0.2+incompatible
+	github.com/go-chi/jwtauth v4.0.3+incompatible
 	github.com/go-chi/render v1.0.1
 	github.com/gobwas/httphead v0.0.0-20180130184737-2c6c146eadee // indirect
 	github.com/gobwas/pool v0.2.0 // indirect

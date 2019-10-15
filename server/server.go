@@ -15,19 +15,35 @@ type Server struct {
 	Port string
 }
 
-// Run the HTTP server
-func (s *Server) Run() error {
+func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
 	var (
-		serve           = make(chan error, 1)
-		sig             = make(chan os.Signal, 1)
 		rooms           = &RoomService{}
 		ws              = NewWsServer(rooms)
 		roomsController = NewRoomsController(rooms)
 		router          = chi.NewRouter()
+		auth            = NewAuth(jwtSectret)
 	)
 	AddFileServer(router, "/", http.Dir("./static"))
 	router.HandleFunc("/ws", ws.SocketHandler)
-	router.Route("/room", roomsController.HTTPHandler)
+	router.Route("/auth", auth.HTTPHandler)
+	router.Route("/api", func(rapi chi.Router) {
+		rapi.Group(func(r chi.Router) {
+			r.Use(auth.Verifier())
+			r.Use(auth.Authenticator)
+			r.Route("/room", roomsController.HTTPHandler)
+		})
+	})
+
+	return router
+}
+
+// Run the HTTP server
+func (s *Server) Run(jwtSectret string) error {
+	var (
+		serve  = make(chan error, 1)
+		sig    = make(chan os.Signal, 1)
+		router = s.composeRouter(jwtSectret)
+	)
 
 	port := s.Port
 	err := http.ListenAndServe(":"+port, router)
