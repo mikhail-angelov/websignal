@@ -7,6 +7,7 @@ socket.binaryType = 'arraybuffer' //to support binary messages
 const messages = document.getElementById('main')
 const textInput = document.getElementById('text')
 const send = document.getElementById('send')
+const yandex = document.getElementById('yandex')
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8')
 const TEXT_TYPE = 0
@@ -19,6 +20,13 @@ send.addEventListener('click', () => {
     textInput.value = ''
   }
 })
+// yandex.addEventListener('submit', () => {
+//   fetch("auth/yandex/login",{
+//     method: 'POST',
+//     mode: 'cors',
+//     body: "test"
+//   })
+// })
 console.log('Attempting Connection...')
 
 socket.onopen = () => {
