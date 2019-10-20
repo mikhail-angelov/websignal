@@ -8,6 +8,8 @@ import (
 	"syscall"
 
 	"github.com/go-chi/chi"
+	"github.com/mikhail-angelov/websignal/auth"
+	"github.com/mikhail-angelov/websignal/logger"
 )
 
 // Server is http server
@@ -17,11 +19,12 @@ type Server struct {
 
 func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
 	var (
+		logger          = logger.New()
 		rooms           = &RoomService{}
 		ws              = NewWsServer(rooms)
 		roomsController = NewRoomsController(rooms)
 		router          = chi.NewRouter()
-		auth            = NewAuth(jwtSectret)
+		auth            = auth.NewAuth(jwtSectret, logger)
 	)
 	AddFileServer(router, "/", http.Dir("./static"))
 	router.HandleFunc("/ws", ws.SocketHandler)
