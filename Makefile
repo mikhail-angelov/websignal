@@ -1,3 +1,4 @@
+include .env
 
 test:
 	go test ./... -v

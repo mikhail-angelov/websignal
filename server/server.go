@@ -46,6 +46,7 @@ func (s *Server) Run(jwtSectret string) error {
 	)
 
 	port := s.Port
+	log.Printf("listen %s port", port)
 	err := http.ListenAndServe(":"+port, router)
 	if err != nil {
 		log.Fatalf("listen %s error: %v", port, err)
