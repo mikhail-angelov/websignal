@@ -1,4 +1,4 @@
-package server
+package auth
 
 import (
 	"io"
@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"github.com/go-chi/chi"
+	"github.com/mikhail-angelov/websignal/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func startupAuthT(t *testing.T, secret string) (ts *httptest.Server, a *Auth, teardown func()) {
-
-	auth := NewAuth(secret)
+	log := logger.New()
+	auth := NewAuth(secret, log)
 	router := chi.NewRouter()
 	router.Route("/auth", auth.HTTPHandler)
 	router.Route("/auth/check", func(rapi chi.Router) {

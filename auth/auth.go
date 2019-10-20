@@ -1,4 +1,4 @@
-package server
+package auth
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/jwtauth"
 	"github.com/go-chi/render"
+	"github.com/mikhail-angelov/websignal/logger"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/yandex"
@@ -35,6 +36,7 @@ type Auth struct {
 	jwtSectret string
 	tokenAuth  *jwtauth.JWTAuth
 	conf       oauth2.Config
+	log        *logger.Log
 }
 
 type Claims struct {
@@ -57,10 +59,11 @@ type loginRequest struct {
 }
 
 //NewAuth constructor
-func NewAuth(jwtSectret string) *Auth {
+func NewAuth(jwtSectret string, log *logger.Log) *Auth {
 	return &Auth{
 		jwtSectret: jwtSectret,
 		tokenAuth:  jwtauth.New("HS256", []byte(jwtSectret), nil),
+		log:        log,
 	}
 }
 
@@ -140,7 +143,7 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 	}
 	request := &loginRequest{}
 	err = json.Unmarshal(body, request)
-	log.Printf("[INFO] login %v", request)
+	a.log.Logf("[INFO] login %v", request)
 
 	//todo, check password and handle validation
 	if request.Password == "" {
@@ -182,7 +185,7 @@ func (a *Auth) loginYandex(w http.ResponseWriter, r *http.Request) {
 	rd, err := randToken()
 	cid, err := randToken()
 	if err != nil {
-		log.Printf("[DEBUG] failed to make claim's id %v", err)
+		a.log.Logf("[DEBUG] failed to make claim's id %v", err)
 	}
 
 	claims := Claims{
