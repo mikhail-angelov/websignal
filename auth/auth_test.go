@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi"
+	"github.com/go-chi/render"
 	"github.com/mikhail-angelov/websignal/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,13 +22,8 @@ func startupAuthT(t *testing.T, secret string) (ts *httptest.Server, a *Auth, te
 	auth := NewAuth(secret, log)
 	router := chi.NewRouter()
 	router.Route("/auth", auth.HTTPHandler)
-	router.Route("/auth/check", func(rapi chi.Router) {
-		rapi.Group(func(r chi.Router) {
-			r.Use(auth.Verifier())
-			r.Use(auth.Authenticator)
-			r.Get("/", auth.Check)
-		})
-	})
+	router.Get("/auth/check", verifyLogin(t))
+
 	ts = httptest.NewServer(router)
 
 	teardown = func() {
@@ -62,18 +58,24 @@ func TestLoginAPI(t *testing.T) {
 
 	r := strings.NewReader(`{"email":"test","password":"test"}`)
 	client := http.Client{}
-	req, err := http.NewRequest("POST", ts.URL+"/auth/login", r)
+	req, err := http.NewRequest("POST", ts.URL+"/auth/login?from=/auth/check", r)
 	assert.Nil(t, err)
-	resp, err := client.Do(req)
-
+	_, err = client.Do(req)
 	require.Nil(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, 200, resp.StatusCode)
 
-	assert.Equal(t, 1, len(resp.Cookies()))
-	assert.Equal(t, "jwt", resp.Cookies()[0].Name, "test")
+	assert.Equal(t, 200, http.StatusOK)
+}
 
-	log.Printf("[INFO] login token: %v ", resp.Cookies())
+func verifyLogin(t *testing.T) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookies := r.Header.Get("Cookie")
+		name := strings.Split(cookies, "=")[0]
+		assert.Equal(t, "jwt", name)
+
+		log.Printf("[INFO] login token: %v ", cookies)
+		render.Status(r, http.StatusOK)
+		render.PlainText(w, r, "ok")
+	}
 }
 
 func TestLoginFailedAPI(t *testing.T) {

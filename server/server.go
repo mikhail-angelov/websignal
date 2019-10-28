@@ -31,7 +31,6 @@ func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
 	router.Route("/auth", auth.HTTPHandler)
 	router.Route("/api", func(rapi chi.Router) {
 		rapi.Group(func(r chi.Router) {
-			r.Use(auth.Verifier())
 			r.Use(auth.Authenticator)
 			r.Route("/room", roomsController.HTTPHandler)
 		})

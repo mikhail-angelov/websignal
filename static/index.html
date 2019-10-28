@@ -7,11 +7,26 @@
 </head>
 <body>
     <div id="main"></div>
-    <input id="text"/>
-    <button id="send">send</button>
-    <form id="yandex" method="post" action="auth/yandex/login">
-        <button >Yandex</button>
-    </form>
+    <div id="no-auth">
+        <input id="text"/>
+        <button id="send">send</button>
+        <form method="post" action="auth/login?from=/">
+            <input name="email">
+            <input name="password" type="password">
+            <button>Login</button>
+        </form>
+        <form id="yandex" method="post" action="auth/yandex/login?from=/">
+            <button>Yandex</button>
+        </form>
+
+    </div>
+    <div id="with-auth">
+        <div id="user"></div>
+        <img id="avatar" style="width: 50px;"/>
+        <form id="logout" method="post" action="auth/logout">
+            <button>Logout</button>
+        </form>
+    </div>
     <script src="main.js"></script>
 </body>
 </html>
