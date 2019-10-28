@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha1"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-chi/jwtauth"
 	"github.com/go-chi/render"
 	"github.com/mikhail-angelov/websignal/logger"
+	"github.com/nullrocks/identicon"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/yandex"
@@ -52,6 +54,21 @@ type Handshake struct {
 	ID    string `json:"id,omitempty"`
 }
 
+type User struct {
+	// set by service
+	Name       string `json:"name"`
+	ID         string `json:"id"`
+	Picture    []byte `json:"picture,omitempty"`
+	PictureUrl string `json:"pictureUrl,omitempty"`
+	Audience   string `json:"aud,omitempty"`
+
+	// set by client
+	IP         string                 `json:"ip,omitempty"`
+	Email      string                 `json:"email,omitempty"`
+	Attributes map[string]interface{} `json:"attrs,omitempty"`
+}
+type UserData map[string]interface{}
+
 //LoginRequest request
 type loginRequest struct {
 	Email    string `json:"email"`
@@ -70,15 +87,15 @@ func NewAuth(jwtSectret string, log *logger.Log) *Auth {
 // HTTPHandler main handler
 func (a *Auth) HTTPHandler(r chi.Router) {
 	r.Post("/login", a.login)
-	r.Get("/callback", a.loginCallback)
 	r.Post("/yandex/login", a.loginYandex)
 	r.Get("/yandex/callback", a.loginYandexCallback)
 	r.Post("/logout", a.logout)
-}
-
-// Verifier Seek, verify and validate JWT tokens
-func (a *Auth) Verifier() func(http.Handler) http.Handler {
-	return jwtauth.Verifier(a.tokenAuth)
+	r.Group(func(r chi.Router) {
+		r.Use(a.Authenticator)
+		r.Route("/user", func(ra chi.Router) {
+			ra.Get("/", a.user)
+		})
+	})
 }
 
 // Authenticator handles valid / invalid tokens. In this example, we use
@@ -88,8 +105,8 @@ func (a *Auth) Verifier() func(http.Handler) http.Handler {
 // r.Use(auth.Authenticator)
 func (a *Auth) Authenticator(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, _, err := jwtauth.FromContext(r.Context())
-		log.Printf("auth %v - %v", token, err)
+		claims, _, err := a.Get(r)
+		log.Printf("auth %v - %v", claims, err)
 		if err != nil {
 			switch err {
 			default:
@@ -106,13 +123,9 @@ func (a *Auth) Authenticator(next http.Handler) http.Handler {
 			}
 		}
 
-		if token == nil || !token.Valid {
-			http.Error(w, http.StatusText(401), 401)
-			return
-		}
-
 		// Token is authenticated, pass it through
-		next.ServeHTTP(w, r)
+		rr := SetUserInfo(r, *claims.User)
+		next.ServeHTTP(w, rr)
 	})
 }
 
@@ -130,38 +143,76 @@ func (a *Auth) NewJwtToken(claims ...jwt.MapClaims) string {
 }
 
 //Check for test
-func (a *Auth) Check(w http.ResponseWriter, r *http.Request) {
+func (a *Auth) user(w http.ResponseWriter, r *http.Request) {
+	user, err := GetUserInfo(r)
+	log.Printf("user %v - %v ", user, err)
 
+	if user.PictureUrl == "" {
+		pic, err := GenerateAvatar(user.Email)
+		if err != nil {
+			log.Printf("failed to gen avatar %v", err)
+		}
+		user.Picture = pic
+	}
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, user)
 }
 
 func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	err := r.ParseForm()
+
 	if err != nil {
 		render.Status(r, http.StatusBadRequest)
 		render.PlainText(w, r, "invalid request")
 		return
 	}
-	request := &loginRequest{}
-	err = json.Unmarshal(body, request)
-	a.log.Logf("[INFO] login %v", request)
+
+	email := r.Form.Get("email")
+	a.log.Logf("[INFO] login %v %v", r.Form.Get("from"), email)
 
 	//todo, check password and handle validation
-	if request.Password == "" {
+	if r.Form.Get("password") == "" {
 		render.Status(r, http.StatusUnauthorized)
 		render.PlainText(w, r, "invalid login")
 		return
 	}
-	authPayload := make(map[string]interface{})
-	authPayload["email"] = request.Email
-	tokenString := a.NewJwtToken(authPayload)
-	cookieExpiration := int((time.Hour * 24).Seconds())
-	jwtCookie := &http.Cookie{Name: JWTCookieName, Value: tokenString, HttpOnly: true, Path: "/",
-		MaxAge: cookieExpiration, Secure: false}
-	http.SetCookie(w, jwtCookie)
-	render.Status(r, http.StatusOK)
-}
-func (a *Auth) loginCallback(w http.ResponseWriter, r *http.Request) {
+	redirect := r.URL.Query().Get("from")
+	if redirect == "" {
+		redirect = "/"
+	}
 
+	u := composeAuthUser(email)
+	cid, err := randToken()
+	if err != nil {
+		log.Printf("[DEBUG] failed to make claim's id %v", err)
+		return
+	}
+
+	claims := Claims{
+		User: &u,
+		StandardClaims: jwt.StandardClaims{
+			Issuer: Issuer,
+			Id:     cid,
+		},
+	}
+
+	log.Printf("-------- %v   %v", claims, redirect)
+
+	if _, err = a.Set(w, claims); err != nil {
+		log.Printf("[DEBUG] failed to set token %v", err)
+		return
+	}
+
+	http.Redirect(w, r, redirect, http.StatusFound)
+}
+
+func composeAuthUser(email string) User {
+	return User{
+		ID:         "local_" + email,
+		Name:       email,
+		Email:      email,
+		PictureUrl: "",
+	}
 }
 
 func (a *Auth) loginYandex(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +313,7 @@ func (a *Auth) loginYandexCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[DEBUG] got raw user info %+v", jData)
 
-	u := mapUser(jData, data)
+	u := mapUserYandex(jData, data)
 
 	cid, err := randToken()
 	if err != nil {
@@ -282,12 +333,21 @@ func (a *Auth) loginYandexCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[INFO] login success %v, %s %v", claims, token, u)
+	log.Printf("[INFO] login success %v, %s %v", oauthClaims.Handshake, token, u)
+
+	if oauthClaims.Handshake != nil && oauthClaims.Handshake.From != "" {
+		http.Redirect(w, r, oauthClaims.Handshake.From, http.StatusTemporaryRedirect)
+		return
+	}
+
 	render.Status(r, http.StatusOK)
 }
 
 func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
-
+	jwtCookie := http.Cookie{Name: JWTCookieName, Value: "", HttpOnly: false, Path: "/",
+		MaxAge: -1, Expires: time.Unix(0, 0), Secure: SecureCookies}
+	http.SetCookie(w, &jwtCookie)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *Auth) Get(r *http.Request) (Claims, string, error) {
@@ -377,20 +437,6 @@ func (a *Auth) IsExpired(claims Claims) bool {
 // 		// See https://tech.yandex.com/passport/doc/dg/reference/response-docpage/
 // 		infoURL: "https://login.yandex.ru/info?format=json",
 
-type User struct {
-	// set by service
-	Name     string `json:"name"`
-	ID       string `json:"id"`
-	Picture  string `json:"picture"`
-	Audience string `json:"aud,omitempty"`
-
-	// set by client
-	IP         string                 `json:"ip,omitempty"`
-	Email      string                 `json:"email,omitempty"`
-	Attributes map[string]interface{} `json:"attrs,omitempty"`
-}
-type UserData map[string]interface{}
-
 // Value returns value for key or empty string if not found
 func (u UserData) Value(key string) string {
 	// json.Unmarshal converts json "null" value to go's "nil", in this case return empty string
@@ -400,7 +446,7 @@ func (u UserData) Value(key string) string {
 	return ""
 }
 
-func mapUser(data UserData, _ []byte) User {
+func mapUserYandex(data UserData, _ []byte) User {
 	userInfo := User{
 		ID:   "yandex_" + "token.HashID(sha1.New()" + data.Value("id"),
 		Name: data.Value("display_name"), // using Display Name by default
@@ -413,14 +459,14 @@ func mapUser(data UserData, _ []byte) User {
 	}
 
 	if data.Value("default_avatar_id") != "" {
-		userInfo.Picture = fmt.Sprintf("https://avatars.yandex.net/get-yapic/%s/islands-200", data.Value("default_avatar_id"))
+		userInfo.PictureUrl = fmt.Sprintf("https://avatars.yandex.net/get-yapic/%s/islands-200", data.Value("default_avatar_id"))
 	}
 	return userInfo
 }
 
-// Set creates token cookie with xsrf cookie and put it to ResponseWriter
-// accepts claims and sets expiration if none defined. permanent flag means long-living cookie,
-// false makes it session only.
+// Set creates token cookie and put it to ResponseWriter
+// accepts claims and sets expiration if none defined.
+// permanent flag means long-living cookie, false makes it session only.
 func (a *Auth) Set(w http.ResponseWriter, claims Claims) (Claims, error) {
 	if claims.ExpiresAt == 0 {
 		claims.ExpiresAt = time.Now().Add(TokenDuration).Unix()
@@ -466,4 +512,45 @@ func randToken() (string, error) {
 		return "", errors.Wrap(err, "can't write randoms to sha1")
 	}
 	return fmt.Sprintf("%x", s.Sum(nil)), nil
+}
+
+// GenerateAvatar for give user with identicon
+func GenerateAvatar(user string) ([]byte, error) {
+
+	iconGen, err := identicon.New("pkgz/auth", 5, 5)
+	if err != nil {
+		return nil, errors.Wrap(err, "can't create identicon service")
+	}
+
+	ii, err := iconGen.Draw(user) // generate an IdentIcon
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to draw avatar for %s", user)
+	}
+
+	buf := &bytes.Buffer{}
+	err = ii.Png(300, buf)
+	return buf.Bytes(), err
+}
+
+type contextKey string
+
+// GetUserInfo returns user info from request context
+func GetUserInfo(r *http.Request) (user User, err error) {
+
+	ctx := r.Context()
+	if ctx == nil {
+		return User{}, errors.New("no info about user")
+	}
+	if u, ok := ctx.Value(contextKey("user")).(User); ok {
+		return u, nil
+	}
+
+	return User{}, errors.New("user can't be parsed")
+}
+
+// SetUserInfo sets user into request context
+func SetUserInfo(r *http.Request, user User) *http.Request {
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, contextKey("user"), user)
+	return r.WithContext(ctx)
 }
