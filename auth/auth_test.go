@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
@@ -31,24 +30,6 @@ func startupAuthT(t *testing.T, secret string) (ts *httptest.Server, a *Auth, te
 	}
 
 	return ts, auth, teardown
-}
-
-func TestServerJWT(t *testing.T) {
-	jwtSectret := "test"
-	ts, a, teardown := startupAuthT(t, jwtSectret)
-	defer teardown()
-
-	h := http.Header{}
-	authPayload := make(map[string]interface{})
-	authPayload["user"] = "ma"
-	tokenString := a.NewJwtToken(authPayload)
-	cookieExpiration := int((time.Hour * 24).Seconds())
-	jwtCookie := &http.Cookie{Name: "jwt", Value: tokenString, HttpOnly: true, Path: "/",
-		MaxAge: cookieExpiration, Secure: false}
-
-	status, resp := testRequest(t, ts, "GET", "/auth/check", h, jwtCookie, nil)
-
-	log.Printf("test %v - %v", status, resp)
 }
 
 func TestLoginAPI(t *testing.T) {
