@@ -1,48 +1,27 @@
 package auth
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
-	"time"
+	"strings"
 
-	"github.com/dgrijalva/jwt-go"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/jwtauth"
 	"github.com/go-chi/render"
+	"github.com/go-pkgz/rest"
 	"github.com/mikhail-angelov/websignal/logger"
+	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/yandex"
-)
-
-const (
-	JWTCookieName = "jwt"
-	JWTHeaderKey  = "X-JWT"
-	JWTQuery      = "token"
-	TokenDuration = time.Hour
-	Issuer        = "websignal"
-	SecureCookies = false
 )
 
 // Auth service
 type Auth struct {
-	jwt  *JWT
-	conf oauth2.Config
-	log  *logger.Log
+	jwt       *JWT
+	conf      oauth2.Config
+	providers []*Auth2Provider
+	log       *logger.Log
 }
 
-type Handshake struct {
-	State string `json:"state,omitempty"`
-	From  string `json:"from,omitempty"`
-	ID    string `json:"id,omitempty"`
-}
-
-//LoginRequest request
-type loginRequest struct {
+type loginRequest1 struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
@@ -56,286 +35,161 @@ func NewAuth(jwtSectret string, log *logger.Log) *Auth {
 }
 
 // HTTPHandler main handler
-func (a *Auth) HTTPHandler(r chi.Router) {
-	r.Post("/login", a.login)
-	r.Post("/yandex/login", a.loginYandex)
-	r.Get("/yandex/callback", a.loginYandexCallback)
-	r.Post("/logout", a.logout)
-	r.Group(func(r chi.Router) {
-		r.Use(a.Authenticator)
-		r.Route("/user", func(ra chi.Router) {
-			ra.Get("/", a.user)
-		})
-	})
+// func (a *Auth) HTTPHandler(r chi.Router) {
+// 	r.Post("/login", a.login)
+// 	r.Post("/yandex/login", a.loginYandex)
+// 	r.Get("/yandex/callback", a.loginYandexCallback)
+// 	r.Post("/logout", a.logout)
+// }
+
+// Handlers gets http.Handler for all providers
+func (a *Auth) Handlers() (authHandler http.Handler) {
+
+	ah := func(w http.ResponseWriter, r *http.Request) {
+		elems := strings.Split(r.URL.Path, "/")
+		if len(elems) < 2 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// list all providers
+		if elems[len(elems)-1] == "list" {
+			list := []string{}
+			for _, p := range a.providers {
+				list = append(list, p.Name())
+			}
+			render.Status(r, http.StatusOK)
+			render.JSON(w, r, list)
+			return
+		}
+
+		// allow logout without specifying provider
+		if elems[len(elems)-1] == "logout" {
+			if len(a.providers) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				rest.RenderJSON(w, r, rest.JSON{"error": "provides not defined"})
+				return
+			}
+			a.providers[0].Handler(w, r)
+			return
+		}
+
+		// show user info
+		if elems[len(elems)-1] == "user" {
+			claims, _, err := a.jwt.Get(r)
+			if err != nil {
+				w.WriteHeader(http.StatusUnauthorized)
+				rest.RenderJSON(w, r, rest.JSON{"error": err.Error()})
+				return
+			}
+			if claims.User.PictureURL == "" {
+				pic, err := GenerateAvatar(claims.User.Email)
+				if err != nil {
+					log.Printf("failed to gen avatar %v", err)
+				}
+				claims.User.Picture = pic
+			}
+			rest.RenderJSON(w, r, claims.User)
+			return
+		}
+
+		// regular auth handlers
+		provName := elems[len(elems)-2]
+		p, err := a.getProviderByName(provName)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			rest.RenderJSON(w, r, rest.JSON{"error": fmt.Sprintf("provider %s not supported", provName)})
+			return
+		}
+		p.Handler(w, r)
+	}
+
+	return http.HandlerFunc(ah)
 }
 
-// Authenticator handles valid / invalid tokens. In this example, we use
+// Auth handles valid / invalid tokens. In this example, we use
 // the provided authenticator middleware, but you can write your
 // own very easily, look at the Authenticator method in jwtauth.go
 // and tweak it, its not scary.
-// r.Use(auth.Authenticator)
-func (a *Auth) Authenticator(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, _, err := a.jwt.Get(r)
-		log.Printf("auth %v - %v", claims, err)
+// r.Use(auth.Auth)
+func (a *Auth) Auth(next http.Handler) http.Handler {
+	onError := func(w http.ResponseWriter, r *http.Request, err error) {
+		a.log.Logf("[DEBUG] auth failed, %v", err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}
+
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		claims, tkn, err := a.jwt.Get(r)
 		if err != nil {
-			switch err {
-			default:
-				http.Error(w, http.StatusText(401), 401)
-				return
-			case jwtauth.ErrExpired:
-				http.Error(w, "expired", 401)
-				return
-			case jwtauth.ErrUnauthorized:
-				http.Error(w, http.StatusText(401), 401)
-				return
-			case nil:
-				// no error
+			onError(w, r, errors.Wrap(err, "can't get token"))
+			return
+		}
+
+		if claims.Handshake != nil { // handshake in token indicate special use cases, not for login
+			onError(w, r, errors.New("invalid kind of token"))
+			return
+		}
+
+		if claims.User == nil {
+			onError(w, r, errors.New("no user info presented in the claim"))
+			return
+		}
+
+		if claims.User != nil { // if user in token populate it to context
+
+			if a.jwt.IsExpired(claims) {
+				if claims, err = a.refreshExpiredToken(w, claims, tkn); err != nil {
+					a.jwt.Clean(w)
+					onError(w, r, errors.Wrap(err, "can't refresh token"))
+					return
+				}
 			}
+
+			r = SetUserInfo(r, *claims.User) // populate user info to request context
 		}
 
-		// Token is authenticated, pass it through
-		rr := SetUserInfo(r, *claims.User)
-		next.ServeHTTP(w, rr)
-	})
+		next.ServeHTTP(w, r)
+	}
+	return http.HandlerFunc(fn)
 }
 
-//Check for test
-func (a *Auth) user(w http.ResponseWriter, r *http.Request) {
-	user, err := GetUserInfo(r)
-	log.Printf("user %v - %v ", user, err)
+// refreshExpiredToken makes a new token with passed claims
+func (a *Auth) refreshExpiredToken(w http.ResponseWriter, claims Claims, tkn string) (Claims, error) {
 
-	if user.PictureURL == "" {
-		pic, err := GenerateAvatar(user.Email)
-		if err != nil {
-			log.Printf("failed to gen avatar %v", err)
+	// cache refreshed claims for given token in order to eliminate multiple refreshes for concurrent requests
+	// if a.RefreshCache != nil {
+	// 	if c, ok := a.RefreshCache.Get(tkn); ok {
+	// 		// already in cache
+	// 		return c.(token.Claims), nil
+	// 	}
+	// }
+
+	claims.ExpiresAt = 0           // this will cause now+duration for refreshed token
+	c, err := a.jwt.Set(w, claims) // Set changes token
+	if err != nil {
+		return Claims{}, err
+	}
+
+	// if a.RefreshCache != nil {
+	// 	a.RefreshCache.Set(tkn, c)
+	// }
+
+	a.log.Logf("[DEBUG] token refreshed for %+v", claims.User)
+	return c, nil
+}
+
+// AddProvider add new auth2 provider
+func (a *Auth) AddProvider(name, cid, secret string) {
+	provider := NewAuth2Provider(&Auth2ProviderParams{name: name, cid: cid, secret: secret, jwt: a.jwt, log: a.log})
+	providers := append(a.providers, provider)
+	a.providers = providers
+}
+
+func (a *Auth) getProviderByName(name string) (*Auth2Provider, error) {
+	for _, p := range a.providers {
+		if p.Name() == name {
+			return p, nil
 		}
-		user.Picture = pic
 	}
-	render.Status(r, http.StatusOK)
-	render.JSON(w, r, user)
-}
-
-func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseForm()
-
-	if err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "invalid request")
-		return
-	}
-
-	email := r.Form.Get("email")
-	a.log.Logf("[INFO] login %v %v", r.Form.Get("from"), email)
-
-	//todo, check password and handle validation
-	if r.Form.Get("password") == "" {
-		render.Status(r, http.StatusUnauthorized)
-		render.PlainText(w, r, "invalid login")
-		return
-	}
-	redirect := r.URL.Query().Get("from")
-	if redirect == "" {
-		redirect = "/"
-	}
-
-	u := composeAuthUser(email)
-	cid, err := randToken()
-	if err != nil {
-		log.Printf("[DEBUG] failed to make claim's id %v", err)
-		return
-	}
-
-	claims := Claims{
-		User: &u,
-		StandardClaims: jwt.StandardClaims{
-			Issuer: Issuer,
-			Id:     cid,
-		},
-	}
-
-	log.Printf("-------- %v   %v", claims, redirect)
-
-	if _, err = a.jwt.Set(w, claims); err != nil {
-		log.Printf("[DEBUG] failed to set token %v", err)
-		return
-	}
-
-	http.Redirect(w, r, redirect, http.StatusFound)
-}
-
-func composeAuthUser(email string) User {
-	return User{
-		ID:         "local_" + email,
-		Name:       email,
-		Email:      email,
-		PictureURL: "",
-	}
-}
-
-func (a *Auth) loginYandex(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "invalid request")
-		return
-	}
-	request := &loginRequest{}
-	err = json.Unmarshal(body, request)
-
-	a.conf = oauth2.Config{
-		ClientID:     os.Getenv("YANDEX_OAUTH2_ID"),
-		ClientSecret: os.Getenv("YANDEX_OAUTH2_SECRET"),
-		Scopes:       []string{},
-		Endpoint:     yandex.Endpoint,
-	}
-	a.conf.RedirectURL = "http://localhost:9001/auth/yandex/callback"
-
-	rd, err := randToken()
-	cid, err := randToken()
-	if err != nil {
-		a.log.Logf("[DEBUG] failed to make claim's id %v", err)
-	}
-
-	claims := Claims{
-		Handshake: &Handshake{
-			State: rd,
-			From:  r.URL.Query().Get("from"),
-		},
-		SessionOnly: r.URL.Query().Get("session") != "" && r.URL.Query().Get("session") != "0",
-		StandardClaims: jwt.StandardClaims{
-			Id:        cid,
-			Audience:  r.URL.Query().Get("site"),
-			ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
-			NotBefore: time.Now().Add(-1 * time.Minute).Unix(),
-		},
-	}
-
-	if _, err := a.jwt.Set(w, claims); err != nil {
-		log.Printf("[DEBUG] failed to set token %v", err)
-		return
-	}
-	loginURL := a.conf.AuthCodeURL(rd)
-	log.Printf("[INFO] yandex login %s %s", loginURL, rd)
-	http.Redirect(w, r, loginURL, http.StatusFound)
-}
-func (a *Auth) loginYandexCallback(w http.ResponseWriter, r *http.Request) {
-	oauthClaims, token, err := a.jwt.Get(r)
-	if err != nil {
-		log.Printf("[WARN] token parse error %v %v", err, oauthClaims)
-		// render.Status(r, http.StatusBadRequest)
-		// render.PlainText(w, r, "invalid request")
-		return
-	}
-	if oauthClaims.Handshake == nil {
-		log.Printf("[WARN] invalid handshake token %v", err)
-		return
-	}
-
-	retrievedState := oauthClaims.Handshake.State
-	log.Printf("[WARN] token parse %s %s", r.URL.Query().Get("state"), retrievedState)
-	if retrievedState == "" || retrievedState != r.URL.Query().Get("state") {
-		log.Printf("[WARN] unexpected state %v", err)
-		return
-	}
-
-	tok, err := a.conf.Exchange(context.Background(), r.URL.Query().Get("code"))
-	log.Printf("[DEBUG] token with state %s", tok)
-	if err != nil {
-		log.Printf("[DEBUG] 1 error %v", err)
-	}
-
-	client := a.conf.Client(context.Background(), tok)
-	infoURL := "https://login.yandex.ru/info?format=json"
-	uinfo, err := client.Get(infoURL)
-	if err != nil {
-		log.Printf("[DEBUG] 2 error %v", err)
-	}
-
-	defer func() {
-		if e := uinfo.Body.Close(); e != nil {
-			log.Printf("[WARN] failed to close response body, %s", e)
-		}
-	}()
-
-	data, err := ioutil.ReadAll(uinfo.Body)
-	if err != nil {
-		log.Printf("[DEBUG] failed to read user info %v", err)
-		return
-	}
-
-	jData := map[string]interface{}{}
-	if e := json.Unmarshal(data, &jData); e != nil {
-		log.Printf("[DEBUG] failed to unmarshal user info %v", err)
-		return
-	}
-	log.Printf("[DEBUG] got raw user info %+v", jData)
-
-	u := mapUserYandex(jData, data)
-
-	cid, err := randToken()
-	if err != nil {
-		log.Printf("[DEBUG] failed to make claim's id %v", err)
-		return
-	}
-	claims := Claims{
-		User: &u,
-		StandardClaims: jwt.StandardClaims{
-			Issuer: Issuer,
-			Id:     cid,
-		},
-	}
-
-	if _, err = a.jwt.Set(w, claims); err != nil {
-		log.Printf("[DEBUG] failed to set token %v", err)
-		return
-	}
-
-	log.Printf("[INFO] login success %v, %s %v", oauthClaims.Handshake, token, u)
-
-	if oauthClaims.Handshake != nil && oauthClaims.Handshake.From != "" {
-		http.Redirect(w, r, oauthClaims.Handshake.From, http.StatusTemporaryRedirect)
-		return
-	}
-
-	render.Status(r, http.StatusOK)
-}
-
-func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
-	jwtCookie := http.Cookie{Name: JWTCookieName, Value: "", HttpOnly: false, Path: "/",
-		MaxAge: -1, Expires: time.Unix(0, 0), Secure: SecureCookies}
-	http.SetCookie(w, &jwtCookie)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-// endpoint: yandex.Endpoint,
-// 		scopes:   []string{},
-// 		// See https://tech.yandex.com/passport/doc/dg/reference/response-docpage/
-// 		infoURL: "https://login.yandex.ru/info?format=json",
-
-// Value returns value for key or empty string if not found
-func (u UserData) Value(key string) string {
-	// json.Unmarshal converts json "null" value to go's "nil", in this case return empty string
-	if val, ok := u[key]; ok && val != nil {
-		return fmt.Sprintf("%v", val)
-	}
-	return ""
-}
-
-func mapUserYandex(data UserData, _ []byte) User {
-	userInfo := User{
-		ID:   "yandex_" + "token.HashID(sha1.New()" + data.Value("id"),
-		Name: data.Value("display_name"), // using Display Name by default
-	}
-	if userInfo.Name == "" {
-		userInfo.Name = data.Value("real_name") // using Real Name (== full name) if Display Name is empty
-	}
-	if userInfo.Name == "" {
-		userInfo.Name = data.Value("login") // otherwise using login
-	}
-
-	if data.Value("default_avatar_id") != "" {
-		userInfo.PictureURL = fmt.Sprintf("https://avatars.yandex.net/get-yapic/%s/islands-200", data.Value("default_avatar_id"))
-	}
-	return userInfo
+	return nil, errors.Errorf("provider %s not found", name)
 }

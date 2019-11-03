@@ -10,7 +10,7 @@
     <div id="no-auth">
         <input id="text"/>
         <button id="send">send</button>
-        <form method="post" action="auth/login?from=/">
+        <form method="post" action="auth/local/login?from=/">
             <input name="email">
             <input name="password" type="password">
             <button>Login</button>
@@ -23,7 +23,7 @@
     <div id="with-auth">
         <div id="user"></div>
         <img id="avatar" style="width: 50px;"/>
-        <form id="logout" method="post" action="auth/logout">
+        <form id="logout" method="post" action="auth/local/logout">
             <button>Logout</button>
         </form>
     </div>

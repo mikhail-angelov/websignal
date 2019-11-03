@@ -20,8 +20,14 @@ func startupAuthT(t *testing.T, secret string) (ts *httptest.Server, a *Auth, te
 	log := logger.New()
 	auth := NewAuth(secret, log)
 	router := chi.NewRouter()
-	router.Route("/auth", auth.HTTPHandler)
-	router.Get("/auth/check", verifyLogin(t))
+	auth.AddProvider("local", "test", "test")
+	router.Mount("/auth", auth.Handlers())
+	router.Route("/api", func(rapi chi.Router) {
+		rapi.Group(func(r chi.Router) {
+			r.Use(auth.Auth)
+			r.Get("/user", verifyLogin(t))
+		})
+	})
 
 	ts = httptest.NewServer(router)
 
@@ -39,7 +45,7 @@ func TestLoginAPI(t *testing.T) {
 
 	r := strings.NewReader(`{"email":"test","password":"test"}`)
 	client := http.Client{}
-	req, err := http.NewRequest("POST", ts.URL+"/auth/login?from=/auth/check", r)
+	req, err := http.NewRequest("POST", ts.URL+"/auth/local/login?from=/api/user", r)
 	assert.Nil(t, err)
 	_, err = client.Do(req)
 	require.Nil(t, err)
@@ -66,7 +72,7 @@ func TestLoginFailedAPI(t *testing.T) {
 
 	r := strings.NewReader(`{"email":"test","password":""}`)
 	client := http.Client{}
-	req, err := http.NewRequest("POST", ts.URL+"/auth/login", r)
+	req, err := http.NewRequest("POST", ts.URL+"/auth/local/login", r)
 	assert.Nil(t, err)
 	resp, err := client.Do(req)
 	require.Nil(t, err)
@@ -104,4 +110,14 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, header 
 	defer resp.Body.Close()
 
 	return resp.StatusCode, string(respBody)
+}
+
+func TestAddProvider(t *testing.T) {
+	jwtSectret := "test"
+	_, auth, teardown := startupAuthT(t, jwtSectret)
+	defer teardown()
+
+	assert.Equal(t, 1, len(auth.providers))
+	auth.AddProvider("yandex", "test", "test")
+	assert.Equal(t, 2, len(auth.providers))
 }

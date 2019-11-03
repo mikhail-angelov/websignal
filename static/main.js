@@ -23,6 +23,10 @@ const init = async () => {
   withAuth.style = 'display:none;'
   try {
     const res = await fetch('/auth/user')
+    if(!res.ok){
+      console.log('error fetch', res.status)
+      return
+    }
     const data = await res.json()
     withAuth.style = 'display:block;'
     noAuth.style = 'display:none;'
@@ -33,7 +37,7 @@ const init = async () => {
     if(data.pictureUrl){
       avatar.src = data.pictureUrl
     }
-    console.log('user:', user)
+    console.log('user:', data)
   } catch (e) {}
 }
 

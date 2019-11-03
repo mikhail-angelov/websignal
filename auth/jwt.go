@@ -20,10 +20,25 @@ type Claims struct {
 	Handshake   *Handshake `json:"handshake,omitempty"` // used for oauth handshake
 }
 
+type Handshake struct {
+	State string `json:"state,omitempty"`
+	From  string `json:"from,omitempty"`
+	ID    string `json:"id,omitempty"`
+}
+
 //JWT service
 type JWT struct {
 	jwtSectret string
 }
+
+const (
+	JWTCookieName = "jwt"
+	JWTHeaderKey  = "X-JWT"
+	JWTQuery      = "token"
+	TokenDuration = time.Hour
+	Issuer        = "websignal"
+	SecureCookies = false
+)
 
 //NewJWT creates a new JWT service
 func NewJWT(jwtSectret string) *JWT {
@@ -150,6 +165,12 @@ func (j *JWT) Set(w http.ResponseWriter, claims Claims) (Claims, error) {
 	http.SetCookie(w, &jwtCookie)
 
 	return claims, nil
+}
+
+func (j *JWT) Clean(w http.ResponseWriter) {
+	jwtCookie := http.Cookie{Name: JWTCookieName, Value: "", HttpOnly: false, Path: "/",
+		MaxAge: -1, Expires: time.Unix(0, 0), Secure: SecureCookies}
+	http.SetCookie(w, &jwtCookie)
 }
 
 // Token makes token with claims
