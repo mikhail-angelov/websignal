@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/go-chi/chi"
+	"github.com/go-chi/render"
 	"github.com/mikhail-angelov/websignal/auth"
 	"github.com/mikhail-angelov/websignal/logger"
 )
@@ -15,6 +17,11 @@ import (
 // Server is http server
 type Server struct {
 	Port string
+}
+
+func test(w http.ResponseWriter, r *http.Request) {
+	render.Status(r, http.StatusOK)
+	render.PlainText(w, r, "test"+time.Now().String())
 }
 
 func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
@@ -26,15 +33,18 @@ func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
 		router          = chi.NewRouter()
 		auth            = auth.NewAuth(jwtSectret, logger)
 	)
+	auth.AddProvider("yandex", os.Getenv("YANDEX_OAUTH2_ID"), os.Getenv("YANDEX_OAUTH2_SECRET"))
+	auth.AddProvider("local", "test", "test")
 	AddFileServer(router, "/", http.Dir("./static"))
 	router.HandleFunc("/ws", ws.SocketHandler)
-	router.Route("/auth", auth.HTTPHandler)
+	router.Mount("/auth", auth.Handlers())
 	router.Route("/api", func(rapi chi.Router) {
 		rapi.Group(func(r chi.Router) {
-			r.Use(auth.Authenticator)
+			r.Use(auth.Auth)
 			r.Route("/room", roomsController.HTTPHandler)
 		})
 	})
+	router.HandleFunc("/test", test)
 
 	return router
 }
