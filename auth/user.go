@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/nullrocks/identicon"
@@ -66,4 +67,13 @@ func GenerateAvatar(user string) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err = ii.Png(300, buf)
 	return buf.Bytes(), err
+}
+
+// Value returns value for key or empty string if not found
+func (u UserData) Value(key string) string {
+	// json.Unmarshal converts json "null" value to go's "nil", in this case return empty string
+	if val, ok := u[key]; ok && val != nil {
+		return fmt.Sprintf("%v", val)
+	}
+	return ""
 }

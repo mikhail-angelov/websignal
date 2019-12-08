@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/render"
 	"github.com/go-pkgz/rest"
 	"github.com/mikhail-angelov/websignal/logger"
 	"github.com/pkg/errors"
@@ -19,6 +18,7 @@ type Auth struct {
 	conf      oauth2.Config
 	providers []*Auth2Provider
 	log       *logger.Log
+	url       string // root url for the rest service, i.e. http://blah.example.com, required
 }
 
 type loginRequest1 struct {
@@ -27,10 +27,11 @@ type loginRequest1 struct {
 }
 
 //NewAuth constructor
-func NewAuth(jwtSectret string, log *logger.Log) *Auth {
+func NewAuth(jwtSectret string, log *logger.Log, url string) *Auth {
 	return &Auth{
 		jwt: NewJWT(jwtSectret),
 		log: log,
+		url: url,
 	}
 }
 
@@ -43,6 +44,7 @@ func NewAuth(jwtSectret string, log *logger.Log) *Auth {
 // }
 
 // Handlers gets http.Handler for all providers
+// it process urls: auth/logout, auth/user, auth/<provider name>/<any>
 func (a *Auth) Handlers() (authHandler http.Handler) {
 
 	ah := func(w http.ResponseWriter, r *http.Request) {
@@ -51,20 +53,10 @@ func (a *Auth) Handlers() (authHandler http.Handler) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-
-		// list all providers
-		if elems[len(elems)-1] == "list" {
-			list := []string{}
-			for _, p := range a.providers {
-				list = append(list, p.Name())
-			}
-			render.Status(r, http.StatusOK)
-			render.JSON(w, r, list)
-			return
-		}
+		command := elems[len(elems)-1]
 
 		// allow logout without specifying provider
-		if elems[len(elems)-1] == "logout" {
+		if command == "logout" {
 			if len(a.providers) == 0 {
 				w.WriteHeader(http.StatusBadRequest)
 				rest.RenderJSON(w, r, rest.JSON{"error": "provides not defined"})
@@ -75,7 +67,7 @@ func (a *Auth) Handlers() (authHandler http.Handler) {
 		}
 
 		// show user info
-		if elems[len(elems)-1] == "user" {
+		if command == "user" {
 			claims, _, err := a.jwt.Get(r)
 			if err != nil {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -180,9 +172,8 @@ func (a *Auth) refreshExpiredToken(w http.ResponseWriter, claims Claims, tkn str
 
 // AddProvider add new auth2 provider
 func (a *Auth) AddProvider(name, cid, secret string) {
-	provider := NewAuth2Provider(&Auth2ProviderParams{name: name, cid: cid, secret: secret, jwt: a.jwt, log: a.log})
-	providers := append(a.providers, provider)
-	a.providers = providers
+	provider := NewAuth2Provider(&Auth2ProviderParams{name: name, cid: cid, secret: secret, jwt: a.jwt, log: a.log, url: a.url})
+	a.providers = append(a.providers, provider)
 }
 
 func (a *Auth) getProviderByName(name string) (*Auth2Provider, error) {

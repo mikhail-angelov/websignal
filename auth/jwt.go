@@ -51,8 +51,6 @@ func (j *JWT) Get(r *http.Request) (Claims, string, error) {
 	fromCookie := false
 	tokenString := ""
 
-	log.Printf("[WARN] cb %v %v", r.URL.Query(), r.Header)
-
 	// try to get from "token" query param
 	if tkQuery := r.URL.Query().Get(JWTQuery); tkQuery != "" {
 		tokenString = tkQuery
@@ -167,6 +165,7 @@ func (j *JWT) Set(w http.ResponseWriter, claims Claims) (Claims, error) {
 	return claims, nil
 }
 
+// Clean jwt auth from response
 func (j *JWT) Clean(w http.ResponseWriter) {
 	jwtCookie := http.Cookie{Name: JWTCookieName, Value: "", HttpOnly: false, Path: "/",
 		MaxAge: -1, Expires: time.Unix(0, 0), Secure: SecureCookies}

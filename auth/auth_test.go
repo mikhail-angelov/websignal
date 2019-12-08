@@ -18,7 +18,7 @@ import (
 
 func startupAuthT(t *testing.T, secret string) (ts *httptest.Server, a *Auth, teardown func()) {
 	log := logger.New()
-	auth := NewAuth(secret, log)
+	auth := NewAuth(secret, log, "http://localhost:9004")
 	router := chi.NewRouter()
 	auth.AddProvider("local", "test", "test")
 	router.Mount("/auth", auth.Handlers())
