@@ -5,20 +5,33 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
+	"github.com/mikhail-angelov/websignal/auth"
+	"github.com/mikhail-angelov/websignal/logger"
 )
 
 func TestSocketHandler(t *testing.T) {
+	secret := "test"
 	rooms := NewRoomService()
-	wsServer := NewWsServer(rooms)
+	logger := logger.New()
+	auth1 := auth.NewAuth(secret, logger, "test-url")
+	wsServer := NewWsServer(rooms, auth1, logger)
 	router := chi.NewRouter()
 	router.HandleFunc("/ws", wsServer.SocketHandler)
 	s := httptest.NewServer(router)
 	defer s.Close()
 
-	url := "ws" + strings.TrimPrefix(s.URL, "http") + "/ws?id=test"
+	jwtService := auth.NewJWT(secret)
+	claims := auth.Claims{User: &auth.User{ID: "test"}, StandardClaims: jwt.StandardClaims{
+		ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
+	}}
+	token := jwtService.NewJwtToken(claims)
+
+	url := "ws" + strings.TrimPrefix(s.URL, "http") + "/ws?token=" + token
 	t.Log("ws connect: " + url)
 
 	ws, _, err := websocket.DefaultDialer.Dial(url, nil)

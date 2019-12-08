@@ -2,8 +2,6 @@ const id = Math.random()
   .toString(36)
   .substring(2, 15)
 const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-const socket = new WebSocket(`${protocol}//${location.host}/ws?id=${id}&token=1234`)
-socket.binaryType = 'arraybuffer' //to support binary messages
 const noAuth = document.getElementById('no-auth')
 const withAuth = document.getElementById('with-auth')
 const user = document.getElementById('user')
@@ -16,14 +14,14 @@ const logout = document.getElementById('logout')
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8')
 const TEXT_TYPE = 0
-
+let socket = null
 
 const init = async () => {
   noAuth.style = 'display:block;'
   withAuth.style = 'display:none;'
   try {
     const res = await fetch('/auth/user')
-    if(!res.ok){
+    if (!res.ok) {
       console.log('error fetch', res.status)
       return
     }
@@ -31,14 +29,18 @@ const init = async () => {
     withAuth.style = 'display:block;'
     noAuth.style = 'display:none;'
     user.textContent = data.name
-    if(data.picture){
-      avatar.src = 'data:image/png;base64,'+data.picture
+    if (data.picture) {
+      avatar.src = 'data:image/png;base64,' + data.picture
     }
-    if(data.pictureUrl){
+    if (data.pictureUrl) {
       avatar.src = data.pictureUrl
     }
+    const token = getJwt()
+    connect(token)
     console.log('user:', data)
-  } catch (e) {}
+  } catch (e) {
+    console.log('invalid auth:', e)
+  }
 }
 
 init()
@@ -51,40 +53,56 @@ send.addEventListener('click', () => {
     textInput.value = ''
   }
 })
-// yandex.addEventListener('click', async () => {
-//   await fetch("auth/yandex/login?from=/")
-// })
-console.log('Attempting Connection...')
 
-socket.onopen = () => {
-  console.log('Successfully Connected')
-}
+function connect(token) {
+  socket = new WebSocket(`${protocol}//${location.host}/ws?id=${id}&token=${token}`)
+  socket.binaryType = 'arraybuffer' //to support binary messages
 
-socket.onclose = event => {
-  console.log('Socket Closed Connection: ', event)
-}
+  console.log('Attempting Connection...')
 
-socket.onerror = error => {
-  console.log('Socket Error: ', error)
-}
+  socket.onopen = () => {
+    console.log('Successfully Connected')
+    //get Rooms
+    getRooms()
+  }
 
-socket.onmessage = event => {
-  try {
-    console.log('Socket on message ', event)
-    const message = JSON.parse(decoder.decode(new Uint8Array(event.data).buffer))
-    console.log('new message', message)
-    const newMessage = document.createElement('div')
-    newMessage.textContent = message.data
-    messages.appendChild(newMessage)
-  } catch (e) {
-    console.log('onmessage error', e)
+  socket.onclose = event => {
+    console.log('Socket Closed Connection: ', event)
+  }
+
+  socket.onerror = error => {
+    console.log('Socket Error: ', error)
+  }
+
+  socket.onmessage = event => {
+    try {
+      console.log('Socket on message ', event)
+      const message = JSON.parse(decoder.decode(new Uint8Array(event.data).buffer))
+      console.log('new message', message)
+      const newMessage = document.createElement('div')
+      newMessage.textContent = message.data
+      messages.appendChild(newMessage)
+    } catch (e) {
+      console.log('onmessage error', e)
+    }
   }
 }
 
-function getCookies() {
-  return document.cookie.split('; ').reduce((c, x) => {
+async function getRooms(){
+  const res = await fetch('/api/room')
+    if (!res.ok) {
+      console.log('error fetch', res.status)
+      return
+    }
+    const data = await res.json()
+    console.log('rooms:', data)
+}
+
+function getJwt() {
+  const cookies = document.cookie.split('; ').reduce((c, x) => {
     const splitted = x.split('=')
     c[splitted[0]] = splitted[1]
     return c
   }, {})
+  return cookies['jwt']
 }

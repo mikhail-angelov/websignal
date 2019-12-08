@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi"
+	"github.com/mikhail-angelov/websignal/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,9 @@ func TestCreateRoomAPI(t *testing.T) {
 
 	r := strings.NewReader(`{"id":"test"}`)
 	client := http.Client{}
-	req, err := http.NewRequest("POST", ts.URL+"/room/test", r)
+	req, err := http.NewRequest("POST", ts.URL+"/room", r)
+	user := auth.User{ID: "test"}
+	auth.SetUserInfo(req, user)
 	assert.Nil(t, err)
 	resp, err := client.Do(req)
 

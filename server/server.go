@@ -28,11 +28,11 @@ func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
 	var (
 		url             = "http://localhost:9001"
 		logger          = logger.New()
+		auth            = auth.NewAuth(jwtSectret, logger, url)
 		rooms           = &RoomService{}
-		ws              = NewWsServer(rooms)
+		ws              = NewWsServer(rooms, auth, logger)
 		roomsController = NewRoomsController(rooms)
 		router          = chi.NewRouter()
-		auth            = auth.NewAuth(jwtSectret, logger, url)
 	)
 	auth.AddProvider("yandex", os.Getenv("YANDEX_OAUTH2_ID"), os.Getenv("YANDEX_OAUTH2_SECRET"))
 	auth.AddProvider("local", "test", "test")

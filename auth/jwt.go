@@ -35,7 +35,7 @@ const (
 	JWTCookieName = "jwt"
 	JWTHeaderKey  = "X-JWT"
 	JWTQuery      = "token"
-	TokenDuration = time.Hour
+	TokenDuration = 24 * time.Hour
 	Issuer        = "websignal"
 	SecureCookies = false
 )
@@ -127,11 +127,9 @@ func (j *JWT) IsExpired(claims Claims) bool {
 }
 
 //NewJwtToken generate new token from payload
-func (j *JWT) NewJwtToken(claims ...jwt.MapClaims) string {
+func (j *JWT) NewJwtToken(claims Claims) string {
 	token := jwt.New(jwt.GetSigningMethod("HS256"))
-	if len(claims) > 0 {
-		token.Claims = claims[0]
-	}
+	token.Claims = claims
 	tokenStr, err := token.SignedString([]byte(j.jwtSectret))
 	if err != nil {
 		log.Fatal(err)
@@ -158,7 +156,7 @@ func (j *JWT) Set(w http.ResponseWriter, claims Claims) (Claims, error) {
 
 	cookieExpiration := 0 // session cookie
 
-	jwtCookie := http.Cookie{Name: JWTCookieName, Value: tokenString, HttpOnly: true, Path: "/",
+	jwtCookie := http.Cookie{Name: JWTCookieName, Value: tokenString, HttpOnly: false, Path: "/",
 		MaxAge: cookieExpiration, Secure: SecureCookies}
 	http.SetCookie(w, &jwtCookie)
 

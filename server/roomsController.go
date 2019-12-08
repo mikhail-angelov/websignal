@@ -8,7 +8,10 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
+	"github.com/mikhail-angelov/websignal/auth"
 )
+
+type contextKey string
 
 //RoomResponse generic response structure
 type RoomResponse struct {
@@ -34,29 +37,35 @@ func NewRoomsController(rooms *RoomService) *RoomsController {
 
 //HTTPHandler main handler
 func (c *RoomsController) HTTPHandler(r chi.Router) {
-	r.Post("/{owner}", c.createRoom)
+	r.Get("/", c.getRooms)
+	r.Post("/", c.createRoom)
 	r.Delete("/{id}", c.removeRoom)
 	r.Post("/join/{id}", c.joinRoom)
 	r.Post("/leave/{id}", c.leaveRoom)
 }
 
+func (c *RoomsController) getRooms(w http.ResponseWriter, r *http.Request) {
+	user, err := auth.GetUserInfo(r)
+	if err != nil {
+		log.Printf("[WARN] invalid user for %s %v", user, err)
+	}
+	rooms, err := c.rooms.GetRoomUsers(user.ID)
+	if err != nil {
+		log.Printf("[WARN] cannot get rooms for %s", user.ID)
+		rooms = []string{}
+	}
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, rooms)
+}
+
 //create room
 func (c *RoomsController) createRoom(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	user, err := auth.GetUserInfo(r)
 	if err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "invalid request")
-		return
+		log.Printf("[WARN] invalid user for %s %v", user, err)
 	}
-	request := &RoomRequest{}
-	err = json.Unmarshal(body, request)
-	log.Printf("[INFO] createRoom %s", request.User)
-	if err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "invalid request")
-		return
-	}
-	room, err := c.rooms.CreateRoom(request.User)
+	log.Printf("[INFO] createRoom for %s", user.ID)
+	room, err := c.rooms.CreateRoom(user.ID)
 	if err != nil {
 		render.Status(r, http.StatusBadRequest)
 		render.PlainText(w, r, "cannot create room")

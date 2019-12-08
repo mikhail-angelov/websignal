@@ -8,6 +8,8 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"github.com/mikhail-angelov/websignal/auth"
+	"github.com/mikhail-angelov/websignal/logger"
 	"github.com/pkg/errors"
 )
 
@@ -21,13 +23,17 @@ type WS struct {
 type WsServer struct {
 	clients map[string]*WS
 	rooms   *RoomService
+	auth    *auth.Auth
+	log     *logger.Log
 }
 
 //NewWsServer create new service
-func NewWsServer(rooms *RoomService) *WsServer {
+func NewWsServer(rooms *RoomService, auth *auth.Auth, log *logger.Log) *WsServer {
 	res := WsServer{
 		clients: make(map[string]*WS),
 		rooms:   rooms,
+		auth:    auth,
+		log:     log,
 	}
 	return &res
 }
@@ -36,28 +42,26 @@ func NewWsServer(rooms *RoomService) *WsServer {
 func (s *WsServer) SocketHandler(w http.ResponseWriter, r *http.Request) {
 	conn, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {
-		log.Printf("upgrade error: %s", err)
+		s.log.Logf("[WARN] upgrade error: %s", err)
 		return
 	}
-	id := r.URL.Query().Get("id")
-	// todo: add auth validation here
-	if id == "" {
-		log.Printf("connection error, invalid id: %s", id)
+	defer conn.Close()
+	token := r.URL.Query().Get("token")
+	id, err := s.auth.ValidateToken(token)
+	if err != nil || id == "" {
+		s.log.Logf("[WARN] connection error, invalid id:  %s, %v", id, err)
 		return
 	}
-	defer func() {
-		conn.Close()
-		delete(s.clients, id)
-	}()
+	defer delete(s.clients, id)
 	// todo: check id is used
 	client := &WS{Conn: conn, ID: id}
 	s.clients[id] = client
-	log.Printf("connected: %s", id)
+	s.log.Logf("[INFO] connected: %s", id)
 
 	for {
 		bts, _, err := wsutil.ReadClientData(conn)
 		if err != nil {
-			log.Printf("read message error: %v", err)
+			s.log.Logf("[WARN] read message error:  %v", err)
 			return
 		}
 		s.processMessage(client, bts)

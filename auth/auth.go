@@ -35,14 +35,6 @@ func NewAuth(jwtSectret string, log *logger.Log, url string) *Auth {
 	}
 }
 
-// HTTPHandler main handler
-// func (a *Auth) HTTPHandler(r chi.Router) {
-// 	r.Post("/login", a.login)
-// 	r.Post("/yandex/login", a.loginYandex)
-// 	r.Get("/yandex/callback", a.loginYandexCallback)
-// 	r.Post("/logout", a.logout)
-// }
-
 // Handlers gets http.Handler for all providers
 // it process urls: auth/logout, auth/user, auth/<provider name>/<any>
 func (a *Auth) Handlers() (authHandler http.Handler) {
@@ -143,6 +135,20 @@ func (a *Auth) Auth(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	}
 	return http.HandlerFunc(fn)
+}
+
+// ValidateToken for WS and return claims ID
+func (a *Auth) ValidateToken(tokenString string) (string, error) {
+	claims, err := a.jwt.Parse(tokenString)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get token")
+	}
+
+	if a.jwt.IsExpired(claims) {
+		return "", errors.Wrap(err, "token expired")
+	}
+
+	return claims.User.ID, nil
 }
 
 // refreshExpiredToken makes a new token with passed claims
