@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -14,6 +15,8 @@ import (
 	"github.com/go-chi/render"
 	"github.com/mikhail-angelov/websignal/logger"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
+	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/yandex"
 )
 
@@ -77,7 +80,7 @@ func getConf(params *Auth2ProviderParams) *oauth2Config {
 			infoURL: "https://login.yandex.ru/info?format=json",
 			mapUser: func(data UserData, _ []byte) User {
 				userInfo := User{
-					ID:   "yandex_" + "data.HashID(sha1.New()" + data.Value("id"),
+					ID:   "yandex_" + HashID(sha1.New(), data.Value("id")),
 					Name: data.Value("display_name"), // using Display Name by default
 				}
 				if userInfo.Name == "" {
@@ -89,6 +92,50 @@ func getConf(params *Auth2ProviderParams) *oauth2Config {
 
 				if data.Value("default_avatar_id") != "" {
 					userInfo.PictureURL = fmt.Sprintf("https://avatars.yandex.net/get-yapic/%s/islands-200", data.Value("default_avatar_id"))
+				}
+				return userInfo
+			},
+		}
+	} else if params.name == "github" {
+		return &oauth2Config{
+			Config: oauth2.Config{
+				ClientID:     params.cid,
+				ClientSecret: params.secret,
+				Endpoint:     github.Endpoint,
+				Scopes:       []string{},
+			},
+			infoURL: "https://api.github.com/user",
+			mapUser: func(data UserData, _ []byte) User {
+				userInfo := User{
+					ID:         "github_" + HashID(sha1.New(), data.Value("login")),
+					Name:       data.Value("name"),
+					PictureURL: data.Value("avatar_url"),
+				}
+				// github may have no user name, use login in this case
+				if userInfo.Name == "" {
+					userInfo.Name = data.Value("login")
+				}
+				return userInfo
+			},
+		}
+	} else if params.name == "google" {
+		return &oauth2Config{
+			Config: oauth2.Config{
+				ClientID:     params.cid,
+				ClientSecret: params.secret,
+				Endpoint:     google.Endpoint,
+				Scopes:       []string{"https://www.googleapis.com/auth/userinfo.profile"},
+			},
+			infoURL: "https://www.googleapis.com/oauth2/v3/userinfo",
+			mapUser: func(data UserData, _ []byte) User {
+				userInfo := User{
+					// encode email with provider name to avoid collision if same id returned by other provider
+					ID:         "google_" + HashID(sha1.New(), data.Value("sub")),
+					Name:       data.Value("name"),
+					PictureURL: data.Value("picture"),
+				}
+				if userInfo.Name == "" {
+					userInfo.Name = "noname_" + userInfo.ID[8:12]
 				}
 				return userInfo
 			},

@@ -35,6 +35,8 @@ func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
 		router          = chi.NewRouter()
 	)
 	auth.AddProvider("yandex", os.Getenv("YANDEX_OAUTH2_ID"), os.Getenv("YANDEX_OAUTH2_SECRET"))
+	auth.AddProvider("github", os.Getenv("GITHUB_OAUTH2_ID"), os.Getenv("GITHUB_OAUTH2_SECRET"))
+	auth.AddProvider("google", os.Getenv("GOOGLE_OAUTH2_ID"), os.Getenv("GOOGLE_OAUTH2_SECRET"))
 	auth.AddProvider("local", "test", "test")
 	AddFileServer(router, "/", http.Dir("./static"))
 	router.HandleFunc("/ws", ws.SocketHandler)

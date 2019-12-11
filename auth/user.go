@@ -3,12 +3,20 @@ package auth
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
+	"hash"
+	"hash/crc64"
+	"io"
 	"net/http"
+	"regexp"
 
 	"github.com/nullrocks/identicon"
 	"github.com/pkg/errors"
 )
+
+var reValidSha = regexp.MustCompile("^[a-fA-F0-9]{40}$")
+var reValidCrc64 = regexp.MustCompile("^[a-fA-F0-9]{16}$")
 
 // User is a structure to share user data between backend and front end
 type User struct {
@@ -76,4 +84,24 @@ func (u UserData) Value(key string) string {
 		return fmt.Sprintf("%v", val)
 	}
 	return ""
+}
+
+// HashID tries to hash val with hash.Hash and fallback to crc if needed
+func HashID(h hash.Hash, val string) string {
+
+	if reValidSha.MatchString(val) {
+		return val // already hashed or empty
+	}
+
+	if _, err := io.WriteString(h, val); err != nil {
+		// fail back to crc64
+		if val == "" {
+			val = "!empty string!"
+		}
+		if reValidCrc64.MatchString(val) {
+			return val // already crced
+		}
+		return fmt.Sprintf("%x", crc64.Checksum([]byte(val), crc64.MakeTable(crc64.ECMA)))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
