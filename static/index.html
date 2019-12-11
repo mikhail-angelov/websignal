@@ -6,10 +6,7 @@
     <title>web signal</title>
 </head>
 <body>
-    <div id="main"></div>
     <div id="no-auth">
-        <input id="text"/>
-        <button id="send">send</button>
         <form method="post" action="auth/local/login?from=/">
             <input name="email">
             <input name="password" type="password">
@@ -32,7 +29,10 @@
         <form id="logout" method="post" action="auth/local/logout">
             <button>Logout</button>
         </form>
+        <div id="main"></div>
+        <input id="text"/>
+        <button id="send">send</button>
     </div>
-    <script src="main.js"></script>
+    <script src="src/main.js" type="module"></script>
 </body>
 </html>
