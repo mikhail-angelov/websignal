@@ -29,7 +29,7 @@ func (s *Server) composeRouter(jwtSectret string) *chi.Mux {
 		url             = "http://localhost:9001"
 		logger          = logger.New()
 		auth            = auth.NewAuth(jwtSectret, logger, url)
-		rooms           = &RoomService{}
+		rooms           = NewRoomService()
 		ws              = NewWsServer(rooms, auth, logger)
 		roomsController = NewRoomsController(rooms)
 		router          = chi.NewRouter()

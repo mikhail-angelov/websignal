@@ -1,0 +1,24 @@
+{
+  "name": "websignal",
+  "version": "1.0.0",
+  "description": "TBD",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "link-lib": "ln -s ${PWD}/node_modules/lit-html ${PWD}/static/libs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikhail-angelov/websignal.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mikhail-angelov/websignal/issues"
+  },
+  "homepage": "https://github.com/mikhail-angelov/websignal#readme",
+  "dependencies": {
+    "lit-html": "^1.1.2"
+  }
+}

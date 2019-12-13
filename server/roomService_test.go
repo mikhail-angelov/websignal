@@ -11,7 +11,7 @@ func TestCreateRoom(t *testing.T) {
 	rooms := NewRoomService()
 	room, err := rooms.CreateRoom("test")
 	require.NoError(t, err)
-	require.Equal(t, room.Owner, "test")
+	require.Equal(t, room.owner, "test")
 }
 
 func TestRemoveRoom(t *testing.T) {

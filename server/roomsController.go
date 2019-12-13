@@ -15,12 +15,12 @@ type contextKey string
 
 //RoomResponse generic response structure
 type RoomResponse struct {
-	ID string `json:id`
+	ID string `json:"id"`
 }
 
 //RoomRequest generic request structure
 type RoomRequest struct {
-	User string `json:user`
+	User string `json:"user"`
 }
 
 //RoomsController controlles structure
@@ -68,7 +68,7 @@ func (c *RoomsController) createRoom(w http.ResponseWriter, r *http.Request) {
 	room, err := c.rooms.CreateRoom(user.ID)
 	if err != nil {
 		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "cannot create room")
+		render.JSON(w, r, "cannot create room")
 		return
 	}
 	render.Status(r, http.StatusOK)
