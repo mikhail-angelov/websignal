@@ -1,3 +1,4 @@
+import { getId } from './utils.js'
 const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8')
@@ -18,7 +19,8 @@ export class Connection {
   }
 
   connect() {
-    const socket = new WebSocket(`${protocol}//${location.host}/ws?token=${this.token}`)
+    const connectionId = getId()
+    const socket = new WebSocket(`${protocol}//${location.host}/ws?token=${this.token}&id=${connectionId}`)
     socket.binaryType = 'arraybuffer' //to support binary messages
     this.socket = socket
 
@@ -54,6 +56,7 @@ export class Connection {
         console.log('onmessage error', e)
       }
     }
+    return connectionId
   }
 
   send(message) {

@@ -11,7 +11,7 @@ func TestCreateRoom(t *testing.T) {
 	rooms := NewRoomService()
 	room, err := rooms.CreateRoom("test")
 	require.NoError(t, err)
-	require.Equal(t, room.owner, "test")
+	require.Equal(t, room.Owner, "test")
 }
 
 func TestRemoveRoom(t *testing.T) {
@@ -30,7 +30,7 @@ func TestJoinLeaveRoom(t *testing.T) {
 	rooms := NewRoomService()
 	room, err := rooms.CreateRoom("test")
 
-	err = rooms.JoinToRoom(room.ID, "test2")
+	room, err = rooms.JoinToRoom(room.ID, "test2")
 	users, _ := rooms.GetRoomUsers(room.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(users))

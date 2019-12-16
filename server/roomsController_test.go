@@ -95,7 +95,10 @@ func TestJoinRoomRoomAPI(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 	body, err := ioutil.ReadAll(resp.Body)
 	assert.Nil(t, err)
-	require.Equal(t, string(body), "ok")
+	response := &Room{}
+	err = json.Unmarshal(body, response)
+	assert.Nil(t, err)
+	require.Equal(t, "test", response.Owner)
 	users, err := rooms.GetRoomUsers(room.ID)
 	assert.Nil(t, err)
 	assert.Equal(t, len(users), 2)

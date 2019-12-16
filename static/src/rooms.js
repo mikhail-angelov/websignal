@@ -6,6 +6,18 @@ async function getRooms() {
   }
   const data = await res.json()
   console.log('rooms:', data)
+  return data
+}
+
+async function joinRoom(id) {
+  const res = await fetch(`/api/room/join/${id}`, { method: 'POST' })
+  if (!res.ok) {
+    console.log('error fetch', res.status)
+    return
+  }
+  const data = await res.json()
+  console.log('room:', data)
+  return data
 }
 
 async function createRoom() {
@@ -19,4 +31,4 @@ async function createRoom() {
   return data
 }
 
-export { getRooms, createRoom }
+export { getRooms, joinRoom, createRoom }

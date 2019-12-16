@@ -68,11 +68,11 @@ func (c *RoomsController) createRoom(w http.ResponseWriter, r *http.Request) {
 	room, err := c.rooms.CreateRoom(user.ID)
 	if err != nil {
 		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, "cannot create room")
+		render.JSON(w, r, ErrorResponse{Error: "cannot create room"})
 		return
 	}
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, &RoomResponse{ID: room.ID})
+	render.JSON(w, r, &room)
 }
 
 //remove room
@@ -107,29 +107,17 @@ func (c *RoomsController) removeRoom(w http.ResponseWriter, r *http.Request) {
 
 //join room
 func (c *RoomsController) joinRoom(w http.ResponseWriter, r *http.Request) {
+	user, err := auth.GetUserInfo(r)
 	id := chi.URLParam(r, "id")
-	log.Printf("[INFO] joinRoom %s", id)
-	body, err := ioutil.ReadAll(r.Body)
+	log.Printf("[INFO] joinRoom %s for user %s", id, user.ID)
+	room, err := c.rooms.JoinToRoom(id, user.ID)
 	if err != nil {
 		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "invalid request")
-		return
-	}
-	request := &RoomRequest{}
-	err = json.Unmarshal(body, request)
-	if err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "invalid request")
-		return
-	}
-	err = c.rooms.JoinToRoom(id, request.User)
-	if err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "cannot join room")
+		render.JSON(w, r, ErrorResponse{Error: "cannot join room"})
 		return
 	}
 	render.Status(r, http.StatusOK)
-	render.PlainText(w, r, "ok")
+	render.JSON(w, r, &room)
 }
 
 //leave room

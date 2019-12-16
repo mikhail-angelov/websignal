@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -47,15 +48,16 @@ func (s *WsServer) SocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 	token := r.URL.Query().Get("token")
+	socketID := r.URL.Query().Get("id")
 	id, err := s.auth.ValidateToken(token)
-	if err != nil || id == "" {
-		s.log.Logf("[WARN] connection error, invalid id:  %s, %v", id, err)
+	if err != nil || id == "" || socketID == "" {
+		s.log.Logf("[WARN] connection error, invalid id:  %s, %s, %v", id, socketID, err)
 		return
 	}
-	defer delete(s.clients, id)
+	defer delete(s.clients, socketID)
 	// todo: check id is used
 	client := &WS{Conn: conn, ID: id}
-	s.clients[id] = client
+	s.clients[socketID] = client
 	s.log.Logf("[INFO] connected: %s", id)
 
 	for {
@@ -64,29 +66,45 @@ func (s *WsServer) SocketHandler(w http.ResponseWriter, r *http.Request) {
 			s.log.Logf("[WARN] read message error:  %v", err)
 			return
 		}
-		s.processMessage(client, bts)
+		s.processMessage(client, socketID, bts)
 	}
 }
 
-func (s *WsServer) processMessage(from *WS, bts []byte) error {
+func (s *WsServer) processMessage(from *WS, socketID string, bts []byte) error {
 	var err error
 	message := Message{}
-	log.Printf("Message: %s", string(bts))
+	//log.Printf("Message: %s", string(bts))
 	json.Unmarshal(bts, &message)
-	log.Printf("Message: %s %d %s", message.Data, message.Type, message.From)
+	log.Printf("receive %d from %s to %s", message.Type, message.From, message.To)
 	switch message.Type {
 	case textMessage:
 		broadcast(s.clients, from.ID, message.Data)
+	case createRoomMessage:
+		room, err := s.rooms.CreateRoom(socketID)
+		if err != nil {
+			return errors.Errorf("create room error")
+		}
+		to := s.clients[socketID]
+		data := map[string]interface{}{"id": room.ID, "owner": room.Owner}
+		err = send(to.Conn, &Message{From: socketID, Type: roomIsCreatedMessage, Data: data, To: socketID})
 	case joinRoomMessage:
-		err = s.rooms.JoinToRoom(message.Data, from.ID)
+		roomID := fmt.Sprintf("%v", message.Data["id"])
+		room, err := s.rooms.JoinToRoom(roomID, socketID)
+		if err != nil {
+			return errors.Errorf("create room error")
+		}
+		to := s.clients[socketID]
+		data := map[string]interface{}{"id": room.ID, "owner": room.Owner}
+		err = send(to.Conn, &Message{From: socketID, Type: roomToJoinMessage, Data: data, To: socketID})
 	case leaveRoomMessage:
-		err = s.rooms.LeaveRoom(message.Data, from.ID)
+		roomID := fmt.Sprintf("%v", message.Data["id"])
+		err = s.rooms.LeaveRoom(roomID, socketID)
 	case sdpMessage:
 		to := s.clients[message.To]
 		if to == nil {
 			return errors.Errorf("invalid destination")
 		}
-		err = send(to.Conn, &Message{From: from.ID, Type: sdpMessage, Data: message.Data, To: message.To})
+		err = send(to.Conn, &Message{From: socketID, Type: sdpMessage, Data: message.Data, To: message.To})
 	case candidateMessage:
 		to := s.clients[message.To]
 		if to == nil {
@@ -97,14 +115,10 @@ func (s *WsServer) processMessage(from *WS, bts []byte) error {
 	return err
 }
 
-func broadcast(connections map[string]*WS, sender string, data string) {
+func broadcast(connections map[string]*WS, sender string, data map[string]interface{}) {
 	log.Printf("broadcast : %d %v", len(connections), data)
 	for id, ws := range connections {
-		text := "> " + data
-		if id == sender {
-			text = "< " + data
-		}
-		message := Message{From: sender, Type: textMessage, Data: text, To: id}
+		message := Message{From: sender, Type: textMessage, Data: data, To: id}
 		err := send(ws.Conn, &message)
 		if err != nil {
 			log.Printf("send message error: %s, %v", id, err)
@@ -113,7 +127,7 @@ func broadcast(connections map[string]*WS, sender string, data string) {
 }
 
 func send(conn net.Conn, message *Message) error {
-	log.Printf("send : %v", message)
+	log.Printf("send %d to %s", message.Type, message.To)
 	bts, err := json.Marshal(message)
 	if err != nil {
 		return err

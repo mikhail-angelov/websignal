@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mikhail-angelov/websignal/auth"
 	"github.com/mikhail-angelov/websignal/logger"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSocketHandler(t *testing.T) {
@@ -31,26 +34,21 @@ func TestSocketHandler(t *testing.T) {
 	}}
 	token := jwtService.NewJwtToken(claims)
 
-	url := "ws" + strings.TrimPrefix(s.URL, "http") + "/ws?token=" + token
+	url := "ws" + strings.TrimPrefix(s.URL, "http") + "/ws?token=" + token + "&id=test"
 	t.Log("ws connect: " + url)
 
 	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+	assert.Nil(t, err)
 	defer ws.Close()
+	data := map[string]interface{}{"text": "test"}
 
-	message := Message{From: "sender", Type: textMessage, Data: "test", To: "id"}
+	message := Message{From: "sender", Type: textMessage, Data: data, To: "id"}
 	bts, _ := json.Marshal(message)
-	if err := ws.WriteMessage(websocket.TextMessage, bts); err != nil {
-		t.Fatalf("%v", err)
-	}
+	err = ws.WriteMessage(websocket.TextMessage, bts)
+	assert.Nil(t, err)
 	_, p, err := ws.ReadMessage()
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+	assert.Nil(t, err)
 	json.Unmarshal(p, &message)
-	if string(message.Data) != "< test" {
-		t.Fatalf("bad message")
-	}
+	text := fmt.Sprintf("%v", message.Data["text"])
+	require.Equal(t, "test", text)
 }
