@@ -2,7 +2,10 @@ import { getAuth } from './auth.js'
 import { getRooms, joinRoom, createRoom } from './rooms.js'
 import { getId } from './utils.js'
 import { Connection, ONOPEN } from './connection.js'
-import * as webrtc from './webrtc.js'
+import { WebRTC } from './webrtc.js'
+
+const getVideoElement = () => document.getElementById('video')
+const getRemoteVideoElement = () => document.getElementById('video-remote')
 
 const TEXT_TYPE = 0
 const CREATE_ROOM = 1
@@ -22,7 +25,9 @@ export class Store {
     room: null,
     messages: [],
     message: '',
+    broadcaster: false,
   }
+  webrtc = null
   connection = null
   connectionId = null
   listeners = []
@@ -30,6 +35,7 @@ export class Store {
   async init() {
     try {
       const [token, user] = await getAuth()
+      this.webrtc = new WebRTC(getVideoElement, getRemoteVideoElement, this.updatePeerStatus)
       const connection = new Connection(token)
       connection.on(TEXT_TYPE, this.onTextMessage)
       connection.on(ONOPEN, this.onOpenConnection)
@@ -38,7 +44,7 @@ export class Store {
       connection.on(ROOM_IS_CREATED, this.onRoomIsCreated)
       this.connectionId = connection.connect()
       this.connection = connection
-      this.set({ authenticated: true, username: user.name, avatar: user.avatar, userId: user.id})
+      this.set({ authenticated: true, username: user.name, avatar: user.avatar, userId: user.id })
       const roomId = this.getRoomId()
       if (roomId) {
         this.onJoinRoom(roomId)
@@ -71,7 +77,7 @@ export class Store {
   }
   stopConference() {
     this.set({ room: null, conferenceLink: '' })
-    webrtc.stop()
+    this.webrtc.stop()
   }
   onMessageChange = e => {
     this.set({ message: e.target.value })
@@ -91,8 +97,8 @@ export class Store {
     try {
       const { data: room } = msg
       const conferenceLink = `${location.origin}?room=${room.id}`
-      webrtc.start(room.id)
-      this.set({ room, conferenceLink })
+      this.webrtc.start(room.id)
+      this.set({ room, conferenceLink, broadcaster: true })
     } catch (e) {
       console.log('create room error', e)
     }
@@ -102,7 +108,7 @@ export class Store {
       const room = await joinRoom(id)
       this.set({ room })
       const peerId = room.owner
-      const offer = await webrtc.connectPeer(this.connectionId, peerId, this.sendCandidate)
+      const offer = await this.webrtc.connectPeer(this.connectionId, peerId, this.sendCandidate)
       this.connection.send({ data: offer, to: room.owner, type: SDP })
     } catch (e) {
       console.log('join room error', e)
@@ -112,20 +118,24 @@ export class Store {
   onSDP = async msg => {
     const { data, from } = msg
     if (data && data.sdp) {
-      const answer = await webrtc.onSDP(data, this.sendCandidate)
-      if(answer){
-        //do we need to send answer
+      const answer = await this.webrtc.onSDP(data, from, this.sendCandidate)
+      if (answer) {
+        //do we need to send answer?
         this.connection.send({ data: answer, to: from, type: SDP })
       }
     } else {
       console.log('-invalid SDP message', msg)
     }
   }
-  sendCandidate = (candidate, peerId) =>{
+  sendCandidate = (peerId, candidate) => {
     this.connection.send({ data: candidate, to: peerId, type: CANDIDATE })
   }
   onCandidate = msg => {
-    webrtc.onCandidate(msg)
+    const { data, from } = msg
+    this.webrtc.onCandidate(from, data)
+  }
+  updatePeerStatus = (peerId, status)=>{
+
   }
 
   on(cb) {

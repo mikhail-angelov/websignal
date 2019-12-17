@@ -110,7 +110,7 @@ func (s *WsServer) processMessage(from *WS, socketID string, bts []byte) error {
 		if to == nil {
 			return errors.Errorf("invalid destination")
 		}
-		err = send(to.Conn, &Message{From: from.ID, Type: candidateMessage, Data: message.Data, To: message.To})
+		err = send(to.Conn, &Message{From: socketID, Type: candidateMessage, Data: message.Data, To: message.To})
 	}
 	return err
 }

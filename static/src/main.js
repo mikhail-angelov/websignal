@@ -1,5 +1,5 @@
 import { render } from '../libs/lit-html/lit-html.js'
-import { view } from './view.js'
+import { view } from './view/view.js'
 import { Store } from './store.js'
 
 const store = new Store()

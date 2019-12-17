@@ -1,4 +1,6 @@
-import { html } from '../libs/lit-html/lit-html.js'
+import { html } from '../../libs/lit-html/lit-html.js'
+import { broadcaster } from './broadcaster.js'
+import { client } from './client.js'
 
 export const view = (data, store) => html`
   ${data.authenticated
@@ -12,23 +14,7 @@ export const view = (data, store) => html`
           <button id="toggle-conference" @click=${store.onToggleConference}>
             ${data.room ? 'stop' : 'start'} conference
           </button>
-          ${data.room
-            ? html`
-                <style>
-                  .local-video {
-                    width: 100px;
-                    height: 66px;
-                  }
-                  .remote-video {
-                    width: 640px;
-                    height: 480px;
-                  }
-                </style>
-                <div><a href=${data.conferenceLink} target="_blank">${data.conferenceLink}</a></div>
-                <video id="video-remote" class="remote-video" autoplay></video>
-                <video id="video" class="local-video" autoplay></video>
-              `
-            : ''}
+          ${data.room ? (data.broadcaster ? broadcaster(data, store) : client(data, store)) : ''}
           <div>
             ${data.messages.map(
               m =>
