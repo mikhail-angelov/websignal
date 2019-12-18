@@ -3,16 +3,15 @@ const getScreenShareStream = () => navigator.getDisplayMedia({ video: true })
 const servers = []
 
 export class WebRTC {
-  peers = {}
-  localStream = null
-
   constructor(getVideoElement, getRemoteVideoElement, updateStatus) {
+    this.peers = {}
+    this.localStream = null
     this.getVideoElement = getVideoElement
     this.getRemoteVideoElement = getRemoteVideoElement
-    this.updateStatus  = updateStatus
+    this.updateStatus = updateStatus
   }
 
-  start = async () => {
+  static start = async () => {
     this.localStream = await navigator.mediaDevices.getUserMedia({ video: true })
     const video = this.getVideoElement()
     video.srcObject = this.localStream
@@ -21,27 +20,27 @@ export class WebRTC {
   stop = () => {
     console.log('Ending call')
     if (this.localStream) {
-      this.localStream.getTracks().forEach(track => track.stop())
+      this.localStream.getTracks().forEach((track) => track.stop())
       this.localStream = null
     }
-    Object.keys(this.peers).forEach(id => {
+    Object.keys(this.peers).forEach((id) => {
       const pc = this.peers[id]
-      pc.removeTrack(pc.sender);
+      pc.removeTrack(pc.sender)
       pc.close()
       const video = this.getVideoElement()
-      if(video) video.srcObject = null
+      if (video) video.srcObject = null
       const remoteVideo = this.getRemoteVideoElement()
-      if(remoteVideo) remoteVideo.srcObject = null
-
+      if (remoteVideo) remoteVideo.srcObject = null
     })
     this.peers = {}
   }
   createPeer(remotePeerId, sendCandidate) {
     const pc = new RTCPeerConnection(servers)
-    let track, tr = null
+    let track,
+      tr = null
     pc.peerId = remotePeerId
     pc.onicecandidate = ({ candidate }) => sendCandidate(remotePeerId, candidate)
-    pc.ontrack = event => {
+    pc.ontrack = (event) => {
       const remoteVideo = this.getRemoteVideoElement()
       if (remoteVideo && remoteVideo.srcObject !== event.streams[0]) {
         remoteVideo.srcObject = event.streams[0]
@@ -50,14 +49,14 @@ export class WebRTC {
         console.log('Received remote stream')
       }
     }
-    pc.oniceconnectionstatechange = event => {
+    pc.oniceconnectionstatechange = (event) => {
       console.log('oniceconnectionstatechange:', event)
-      if(event.currentTarget.iceConnectionState === 'closed'){
+      if (event.currentTarget.iceConnectionState === 'closed') {
         this.updateStatus(remotePeerId, 'disconnected', tr)
         track.stop() //need investigate it
       }
     }
-    this.localStream.getTracks().forEach(track => {
+    this.localStream.getTracks().forEach((track) => {
       pc.sender = pc.addTrack(track, this.localStream)
     })
     return pc

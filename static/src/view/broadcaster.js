@@ -12,6 +12,8 @@ export const broadcaster = (data, store) => html`
     }
   </style>
   <div><a href=${data.conferenceLink} target="_blank">${data.conferenceLink}</a></div>
-  <video id="video-remote" class="remote-video" autoplay></video>
-  <video id="video" class="local-video" autoplay></video>
+  <div class="container">
+    <video id="video-remote" class="remote-video" autoplay></video>
+    <video id="video" class="local-video" autoplay></video>
+  </div>
 `
