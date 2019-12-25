@@ -51,9 +51,10 @@ func (s *WsServer) SocketHandler(w http.ResponseWriter, r *http.Request) {
 	socketID := r.URL.Query().Get("id")
 	id, err := s.auth.ValidateToken(token)
 	if err != nil || id == "" || socketID == "" {
-		s.log.Logf("[WARN] connection error, invalid id:  %s, %s, %v", id, socketID, err)
+		s.log.Logf("[WARN] connection auth error:  %s, %s, %s", id, socketID, err)
 		return
 	}
+	// continue connection after validation
 	defer delete(s.clients, socketID)
 	// todo: check id is used
 	client := &WS{Conn: conn, ID: id}
@@ -75,7 +76,7 @@ func (s *WsServer) processMessage(from *WS, socketID string, bts []byte) error {
 	message := Message{}
 	//log.Printf("Message: %s", string(bts))
 	json.Unmarshal(bts, &message)
-	log.Printf("receive %d from %s to %s", message.Type, message.From, message.To)
+	log.Printf("receive %d from %s to %s", message.Type, socketID, message.To)
 	switch message.Type {
 	case textMessage:
 		broadcast(s.clients, from.ID, message.Data)
@@ -89,13 +90,15 @@ func (s *WsServer) processMessage(from *WS, socketID string, bts []byte) error {
 		err = send(to.Conn, &Message{From: socketID, Type: roomIsCreatedMessage, Data: data, To: socketID})
 	case joinRoomMessage:
 		roomID := fmt.Sprintf("%v", message.Data["id"])
+		peerID := fmt.Sprintf("%v", message.Data["peerId"])
 		room, err := s.rooms.JoinToRoom(roomID, socketID)
-		if err != nil {
-			return errors.Errorf("create room error")
+		if err != nil || peerID == "" {
+			return errors.Errorf("join room error %s %s %v", roomID, message.To, err)
 		}
-		to := s.clients[socketID]
-		data := map[string]interface{}{"id": room.ID, "owner": room.Owner}
-		err = send(to.Conn, &Message{From: socketID, Type: roomToJoinMessage, Data: data, To: socketID})
+		log.Printf("joinRoomMessage to %s %s", roomID, message.To)
+		to := s.clients[message.To]
+		data := map[string]interface{}{"id": room.ID, "peerId": peerID}
+		err = send(to.Conn, &Message{From: socketID, Type: roomToJoinMessage, Data: data, To: message.To})
 	case leaveRoomMessage:
 		roomID := fmt.Sprintf("%v", message.Data["id"])
 		err = s.rooms.LeaveRoom(roomID, socketID)

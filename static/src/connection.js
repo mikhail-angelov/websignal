@@ -4,6 +4,7 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8')
 
 export const ONOPEN = 'ON_OPEN_CONNECTION'
+export const ONCLOSE = 'ON_CLOSE_CONNECTION'
 
 export class Connection {
   socket
@@ -36,6 +37,10 @@ export class Connection {
 
     socket.onclose = event => {
       console.log('Socket Closed Connection: ', event)
+      const listener = this.listeners[ONCLOSE]
+      if (listener) {
+        listener()
+      }
     }
 
     socket.onerror = error => {
@@ -44,8 +49,8 @@ export class Connection {
 
     socket.onmessage = event => {
       try {
-        console.log('Socket on message ', event)
         const message = JSON.parse(decoder.decode(new Uint8Array(event.data).buffer))
+        console.log('Socket on message ', message)
         const listener = this.listeners[message.type]
         if (listener) {
           listener(message)

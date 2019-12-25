@@ -147,6 +147,7 @@ func (a *Auth) ValidateToken(tokenString string) (string, error) {
 	if a.jwt.IsExpired(claims) {
 		return "", errors.Wrap(err, "token expired")
 	}
+	log.Printf("success auth  %v", claims.User.ID)
 
 	return claims.User.ID, nil
 }
