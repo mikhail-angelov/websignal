@@ -2,12 +2,10 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/go-chi/chi"
@@ -16,12 +14,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func fakeAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := auth.User{ID: "test", Name: "test"}
+		r = auth.SetUserInfo(r, user) // populate user info to request context
+		next.ServeHTTP(w, r)
+	})
+}
 func startupT(t *testing.T) (ts *httptest.Server, rs *RoomService, teardown func()) {
 
 	rooms := NewRoomService()
 	controller := NewRoomsController(rooms)
 	router := chi.NewRouter()
-	router.Route("/room", controller.HTTPHandler)
+	router.Route("/api", func(rapi chi.Router) {
+		rapi.Group(func(r chi.Router) {
+			r.Use(fakeAuth)
+			r.Route("/room", controller.HTTPHandler)
+		})
+	})
 	ts = httptest.NewServer(router)
 
 	teardown = func() {
@@ -30,15 +40,12 @@ func startupT(t *testing.T) (ts *httptest.Server, rs *RoomService, teardown func
 
 	return ts, rooms, teardown
 }
-func TestCreateRoomAPI(t *testing.T) {
+func TestGetRoomsAPI(t *testing.T) {
 	ts, _, teardown := startupT(t)
 	defer teardown()
 
-	r := strings.NewReader(`{"id":"test"}`)
 	client := http.Client{}
-	req, err := http.NewRequest("POST", ts.URL+"/room", r)
-	user := auth.User{ID: "test"}
-	auth.SetUserInfo(req, user)
+	req, err := http.NewRequest("GET", ts.URL+"/api/room", nil)
 	assert.Nil(t, err)
 	resp, err := client.Do(req)
 
@@ -47,59 +54,9 @@ func TestCreateRoomAPI(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 	body, err := ioutil.ReadAll(resp.Body)
 	assert.Nil(t, err)
-	response := &RoomResponse{}
-	err = json.Unmarshal(body, response)
+	var response []Room
+	err = json.Unmarshal([]byte(body), &response)
 	assert.Nil(t, err)
-	log.Printf("[INFO] created id: %s ", response.ID)
-}
-
-func TestRemoveRoomRoomAPI(t *testing.T) {
-	ts, rooms, teardown := startupT(t)
-	defer teardown()
-
-	user := "test"
-	room, err := rooms.CreateRoom(user)
-	assert.Nil(t, err)
-
-	r := strings.NewReader(fmt.Sprintf(`{"user":"%s"}`, user))
-	client := http.Client{}
-	req, err := http.NewRequest("DELETE", ts.URL+"/room/"+room.ID, r)
-	assert.Nil(t, err)
-	resp, err := client.Do(req)
-
-	require.Nil(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, 200, resp.StatusCode)
-	body, err := ioutil.ReadAll(resp.Body)
-	assert.Nil(t, err)
-	require.Equal(t, string(body), "ok")
-}
-
-func TestJoinRoomRoomAPI(t *testing.T) {
-	ts, rooms, teardown := startupT(t)
-	defer teardown()
-
-	user := "test"
-	other := "test2"
-	room, err := rooms.CreateRoom(user)
-	assert.Nil(t, err)
-
-	r := strings.NewReader(fmt.Sprintf(`{"user":"%s"}`, other))
-	client := http.Client{}
-	req, err := http.NewRequest("POST", ts.URL+"/room/join/"+room.ID, r)
-	assert.Nil(t, err)
-	resp, err := client.Do(req)
-
-	require.Nil(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, 200, resp.StatusCode)
-	body, err := ioutil.ReadAll(resp.Body)
-	assert.Nil(t, err)
-	response := &Room{}
-	err = json.Unmarshal(body, response)
-	assert.Nil(t, err)
-	require.Equal(t, "test", response.Owner)
-	users, err := rooms.GetRoomUsers(room.ID)
-	assert.Nil(t, err)
-	assert.Equal(t, len(users), 2)
+	assert.Equal(t, 0, len(response))
+	log.Printf("[INFO] rooms: %v ", response)
 }

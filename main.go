@@ -11,9 +11,12 @@ func main() {
 	if port == "" {
 		port = "9001"
 	}
+	jwtSectret := os.Getenv("SECRET")
+	if port == "" {
+		jwtSectret = "tsjwt"
+	}
 	s := &server.Server{
 		Port: port,
 	}
-	jwtSectret := "tsjwt"
 	s.Run(jwtSectret)
 }

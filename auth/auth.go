@@ -138,18 +138,25 @@ func (a *Auth) Auth(next http.Handler) http.Handler {
 }
 
 // ValidateToken for WS and return claims ID
-func (a *Auth) ValidateToken(tokenString string) (string, error) {
+func (a *Auth) ValidateToken(tokenString string) (*User, error) {
 	claims, err := a.jwt.Parse(tokenString)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get token")
+		return nil, errors.Wrap(err, "failed to get token")
 	}
 
 	if a.jwt.IsExpired(claims) {
-		return "", errors.Wrap(err, "token expired")
+		return nil, errors.Wrap(err, "token expired")
 	}
 	log.Printf("success auth  %v", claims.User.ID)
+	if claims.User.PictureURL == "" {
+		pic, err := GenerateAvatar(claims.User.Email)
+		if err != nil {
+			log.Printf("failed to gen avatar %v", err)
+		}
+		claims.User.Picture = pic
+	}
 
-	return claims.User.ID, nil
+	return claims.User, nil
 }
 
 // refreshExpiredToken makes a new token with passed claims

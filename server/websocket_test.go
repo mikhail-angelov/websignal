@@ -40,15 +40,19 @@ func TestSocketHandler(t *testing.T) {
 	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
 	assert.Nil(t, err)
 	defer ws.Close()
-	data := map[string]interface{}{"text": "test"}
+	data := composeData(map[string]interface{}{"text": "test", "id": "test"})
 
-	message := Message{From: "sender", Type: textMessage, Data: data, To: "id"}
+	message := Message{From: "sender", Type: createRoomMessage, Data: data, To: "id"}
 	bts, _ := json.Marshal(message)
 	err = ws.WriteMessage(websocket.TextMessage, bts)
 	assert.Nil(t, err)
 	_, p, err := ws.ReadMessage()
 	assert.Nil(t, err)
-	json.Unmarshal(p, &message)
-	text := fmt.Sprintf("%v", message.Data["text"])
+	msg := Message{}
+	json.Unmarshal(p, &msg)
+	messageData := InputMessageData{}
+	json.Unmarshal(msg.Data, &messageData)
+
+	text := fmt.Sprintf("%v", messageData["owner"])
 	require.Equal(t, "test", text)
 }

@@ -20,6 +20,7 @@ async function joinRoom(id) {
   return data
 }
 
+
 async function createRoom() {
   const res = await fetch('/api/room', { method: 'POST' })
   if (!res.ok) {
@@ -27,7 +28,7 @@ async function createRoom() {
     return
   }
   const data = await res.json()
-  console.log('room:', data)
+  console.log('createRoom:', data)
   return data
 }
 

@@ -15,18 +15,25 @@ const SDP = 4
 const CANDIDATE = 5
 const GET_ROOM = 6
 const ROOM_IS_CREATED = 7
-const ADD_PEER = 8
+const UPDATE_ROOM = 8
+const START_PEER_CONNECTION = 9
+const ADD_FAKE_USER = 10
+const REMOVE_FAKE_USER = 11
 
 export class Store {
   data = {
     authenticated: false,
+    hideMessages: true,
     userId: '',
     username: '',
     avatar: '',
     room: null,
     messages: [],
+    users: [],
     message: '',
     broadcaster: false,
+    muted: true,
+    fakeUsers: [],
   }
   webrtc = null
   connection = null
@@ -42,7 +49,8 @@ export class Store {
       connection.on(TEXT_TYPE, this.onTextMessage)
       connection.on(ONOPEN, this.onOpenConnection)
       connection.on(ONCLOSE, this.onCloseConnection)
-      connection.on(ADD_PEER, this.onAddPeer)
+      connection.on(UPDATE_ROOM, this.onUpdateRoom)
+      connection.on(START_PEER_CONNECTION, this.onStartPeerConnection)
       connection.on(SDP, this.onSDP)
       connection.on(CANDIDATE, this.onCandidate)
       connection.on(ROOM_IS_CREATED, this.onRoomIsCreated)
@@ -53,10 +61,18 @@ export class Store {
       if (roomId) {
         this.onJoinRoom(roomId)
       }
+      setInterval(() => {
+        this.webrtc.getSoundIndicator(0)
+        this.webrtc.getSoundIndicator(1)
+      }, 10000)
     } catch (e) {
       console.log('invalid auth:', e)
       this.set({ authenticated: false })
     }
+  }
+  toggleMessages = () => {
+    const { hideMessages } = this.get()
+    this.set({ hideMessages: !hideMessages })
   }
   getRoomId = () => {
     const queryString = location.search
@@ -86,20 +102,6 @@ export class Store {
     this.set({ room: null, conferenceLink: '' })
     this.webrtc.stop()
   }
-  onMessageChange = e => {
-    this.set({ message: e.target.value })
-  }
-  onTextMessage = message => {
-    console.log('new message', message)
-    this.set({ messages: [...this.get().messages, message] })
-  }
-  onSendMessage = () => {
-    const { message, userId } = this.get()
-    if ((message, this.connection)) {
-      this.connection.send({ data: message, from: userId, type: TEXT_TYPE })
-      this.set({ message: '' })
-    }
-  }
   onRoomIsCreated = msg => {
     try {
       const { data: room } = msg
@@ -112,19 +114,29 @@ export class Store {
   }
   onJoinRoom = async id => {
     try {
-      const room = await joinRoom(id)
-      this.set({ room })
-      this.connection.send({ data: { peerId: this.connectionId, id: room.id }, to: room.owner, type: JOIN_ROOM })
+      this.connection.send({ data: { peerId: this.connectionId, id: id }, to: "me", type: JOIN_ROOM })
     } catch (e) {
       console.log('join room error', e)
       location.search = ''
     }
   }
-  onAddPeer = async msg => {
+  onUpdateRoom = async msg => {
+    try {
+      const { data } = msg
+      const users = data.users
+        .filter(user => user.peerId !== this.connectionId)
+        .map(user => ({ ...user, picture: user.pictureUrl || `data:image/png;base64,${user.picture}` }))
+      this.set({ room: data, messages: data.messages, users })
+    } catch (e) {
+      console.log('add peer error', e)
+      location.search = ''
+    }
+  }
+  onStartPeerConnection = async msg => {
     try {
       const { data } = msg
       const peerId = data.peerId
-      const offer = await this.webrtc.connectPeer(this.connectionId, peerId, this.sendCandidate)
+      const offer = await this.webrtc.connectPeer(this.connectionId, peerId, this.sendCandidate, this.getUsers)
       this.connection.send({ data: offer, to: peerId, type: SDP })
     } catch (e) {
       console.log('add peer error', e)
@@ -134,7 +146,7 @@ export class Store {
   onSDP = async msg => {
     const { data, from } = msg
     if (data && data.sdp) {
-      const answer = await this.webrtc.onSDP(data, from, this.sendCandidate)
+      const answer = await this.webrtc.onSDP(data, from, this.sendCandidate, this.getUsers)
       if (answer) {
         //do we need to send answer?
         this.connection.send({ data: answer, to: from, type: SDP })
@@ -150,59 +162,68 @@ export class Store {
     const { data, from } = msg
     await this.webrtc.onCandidate(from, data)
   }
-  updatePeerStatus = (peerId, status) => {
-
+  getUsers = () => {
+    const { room } = this.get()
+    return room.users
   }
-  dropClient = async clientIndex=>{
-    const [peerId, offer] = await this.webrtc.dropClient(clientIndex)
-    this.connection.send({ data: offer, to: peerId, type: SDP })
+  updatePeerStatus = (peerId, status) => {
+    console.log('-update peer:', peerId, status)
+  }
+  dropClient = async userId => {
+    const { fakeUsers, room } = this.get()
+    this.set({ fakeUsers: fakeUsers.filter(id => id != userId) })
+    await this.webrtc.dropClient(userId, (peerId, offer) => {
+      this.connection.send({ data: offer, to: peerId, type: SDP })
+    })
+    this.connection.send({ type: REMOVE_FAKE_USER, to: 'all', data: { roomId: room.id, id: userId } })
+    this.set({ fakeUsers })
   }
   onMp3FileLoad = async e => {
+    const { fakeUsers, room } = this.get()
     const files = Array.from(e.target.files)
-    const streams = await Promise.all(files.map(file => this.getAudioFromFileStream(file)))
-    const [peerId, offer] = await this.webrtc.addLocalAudioTracks(streams)
-    this.connection.send({ data: offer, to: peerId, type: SDP })
-  }
-
-  getAudioFromFileStream = file => {
-    return new Promise((resolve, reject) => {
-      const context = new AudioContext();
-      const gainNode = context.createGain();
-      gainNode.connect(context.destination);
-      // don't play for self
-      gainNode.gain.value = 0;
-
-      const reader = new FileReader();
-      reader.onload = ((e) => {
-        // Import callback function that provides PCM audio data decoded as an audio buffer
-        context.decodeAudioData(e.target.result, (buffer) => {
-          // Create the sound source
-          const soundSource = context.createBufferSource();
-
-          soundSource.buffer = buffer;
-          soundSource.start(0, 0 / 1000);
-          soundSource.connect(gainNode);
-
-          const destination = context.createMediaStreamDestination();
-          soundSource.connect(destination);
-
-          // destination.stream
-          console.log('-', destination.stream)
-          resolve([destination.stream, file.name])
-        });
-      });
-
-      reader.readAsArrayBuffer(file);
+    const tracks = await Promise.all(files.map(file => this.webrtc.getAudioFromFileStream(file)))
+    tracks.forEach(([track, file]) => {
+      fakeUsers.push(track.id)
+      // set pending user id before track is added to peer
+      // this is a hack, since I did not find the way how to pass extra information along with media track for the same peer
+      this.connection.send({ type: ADD_FAKE_USER, to: 'all', data: { roomId: room.id, id: track.id, name: file, pictureUrl: '/assets/file.png' } })
     })
+    this.webrtc.addLocalAudioTracks(tracks)
+    await this.webrtc.refreshPeersSdp((peerId, offer) =>
+      this.connection.send({ data: offer, to: peerId, type: SDP }))
+    this.set({ fakeUsers })
   }
 
   onMute = () => {
+    const { muted } = this.get()
     this.webrtc.toggleMicrophoneMute()
+    this.set({ muted: !muted })
   }
   onRefresh = () => {
     this.webrtc.stop()
     const { room } = this.get()
     this.connection.send({ data: { peerId: this.connectionId, id: room.id }, to: room.owner, type: JOIN_ROOM })
+  }
+  setPendingUser = async msg => {
+    const { data } = msg
+    this.webrtc.setPendingUserId(data.id)
+  }
+
+  //messaging
+  onTextMessage = msg => {
+    const { data } = msg
+    console.log('new message', data)
+    this.set({ messages: [...this.get().messages, data] })
+  }
+  onMessageChange = e => {
+    this.set({ message: e.target.value })
+  }
+  onSendMessage = () => {
+    const { message, userId, room } = this.get()
+    if ((message, this.connection)) {
+      this.connection.send({ data: { text: message, id: room.id }, from: userId, type: TEXT_TYPE })
+      this.set({ message: '' })
+    }
   }
 
   on(cb) {

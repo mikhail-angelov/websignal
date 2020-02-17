@@ -40,15 +40,14 @@ type contextKey string
 
 // GetUserInfo returns user info from request context
 func GetUserInfo(r *http.Request) (user User, err error) {
-
 	ctx := r.Context()
 	if ctx == nil {
 		return User{}, errors.New("no info about user")
 	}
-	if u, ok := ctx.Value(contextKey("user")).(User); ok {
+	u, ok := ctx.Value(contextKey("user")).(User)
+	if ok {
 		return u, nil
 	}
-
 	return User{}, errors.New("user can't be parsed")
 }
 
