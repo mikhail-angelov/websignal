@@ -9,4 +9,5 @@ run:
 
 link-lib:
 	ln -s ${PWD}/node_modules/lit-html ${PWD}/static/libs
+	ln -s ${PWD}/node_modules/lit-element ${PWD}/static/libs
 .PHONY: bin
