@@ -1,6 +1,6 @@
 import { html } from '../../libs/lit-html/lit-html.js'
 import { styleMap } from '../../libs/lit-html/directives/style-map.js'
-import { login } from './login.js'
+import './login.js'
 import { header } from './header.js'
 import { users } from './users.js'
 import { messages } from './messages.js'
@@ -16,7 +16,7 @@ export const view = (data, store) => html`
             ${store.webrtc.streams.map(stream => html`<audio autoplay test=${audioBind(stream.stream)}></audio>`)}
           </div>`: null}
         </div>`
-    : login()}
+    : html`<login-form />`}
 `
 const styles = {
   container: {
